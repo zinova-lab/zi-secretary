@@ -1,0 +1,7 @@
+name = "zi-secretary"
+main = "src/index.ts"
+compatibility_date = "2025-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
