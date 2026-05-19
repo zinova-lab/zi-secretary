@@ -94,7 +94,8 @@ function needsMeetingContext(intent: Intent): boolean {
     intent.type === "meeting-summary" ||
     intent.type === "job-post" ||
     intent.type === "pitch-deck" ||
-    intent.type === "article-writer"
+    intent.type === "article-writer" ||
+    intent.type === "general"
   );
 }
 

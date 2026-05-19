@@ -132,8 +132,22 @@ export async function buildSystemPrompt(
       break;
     }
     case "general": {
-      const hub = await fetchPrompt(HUB_PATH);
-      sections.push({ title: "ハブプロンプト", content: hub });
+      const [hub, agent] = await Promise.all([
+        fetchPrompt(HUB_PATH),
+        fetchPrompt("prompts/agent-general.md"),
+      ]);
+      sections.push(
+        { title: "ハブプロンプト", content: hub },
+        { title: "汎用エージェント", content: agent },
+      );
+      // general は議事録のサンプルにフォールバックしない。
+      // ユーザーが実際に議事録を貼った場合のみ参考文脈として添える。
+      if (userMeetingNote) {
+        sections.push({
+          title: "参照議事録(ユーザー投稿)",
+          content: userMeetingNote,
+        });
+      }
       break;
     }
   }
