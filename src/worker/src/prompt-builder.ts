@@ -118,6 +118,19 @@ export async function buildSystemPrompt(
       );
       break;
     }
+    case "article-writer": {
+      const [hub, agent, meetingSection] = await Promise.all([
+        fetchPrompt(HUB_PATH),
+        fetchPrompt("prompts/agent-article-writer.md"),
+        getMeetingSection(userMeetingNote, "対象議事録(参考文脈)"),
+      ]);
+      sections.push(
+        { title: "ハブプロンプト", content: hub },
+        { title: "記事執筆エージェント", content: agent },
+        meetingSection,
+      );
+      break;
+    }
     case "general": {
       const hub = await fetchPrompt(HUB_PATH);
       sections.push({ title: "ハブプロンプト", content: hub });

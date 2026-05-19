@@ -3,6 +3,7 @@ export type IntentType =
   | "job-post"
   | "pitch-deck"
   | "meeting-summary"
+  | "article-writer"
   | "general";
 
 export type Media = "indeed" | "mynavi" | "rikunavi-next";
@@ -17,6 +18,13 @@ const JOB_POST_KEYWORDS = ["求人原稿", "求人"];
 const PITCH_DECK_KEYWORDS = ["採用資料", "ピッチ資料", "会社説明"];
 const MEETING_SUMMARY_KEYWORDS = ["議事録要約", "要約", "サマリー"];
 const TASK_EXTRACT_KEYWORDS = ["タスク抽出", "タスク", "todo", "やること"];
+const ARTICLE_WRITER_KEYWORDS = [
+  "記事執筆",
+  "記事",
+  "ブログ",
+  "コラム",
+  "オウンドメディア",
+];
 
 const MEDIA_RULES: Array<{ media: Media; keywords: string[] }> = [
   { media: "indeed", keywords: ["indeed"] },
@@ -66,7 +74,14 @@ export function detectIntent(text: string): Intent {
   if (containsAny(lowered, TASK_EXTRACT_KEYWORDS)) {
     return { type: "task-extract", company };
   }
+  if (containsAny(lowered, ARTICLE_WRITER_KEYWORDS)) {
+    return { type: "article-writer", company };
+  }
   return { type: "general" };
+}
+
+export function wantsGoogleDoc(text: string): boolean {
+  return /(^|\s)docs(\s|$)/i.test(text) || text.includes("ドキュメント");
 }
 
 export function hasExplicitAgentKeyword(text: string): IntentType | null {
@@ -95,6 +110,13 @@ export function hasExplicitAgentKeyword(text: string): IntentType | null {
   ) {
     return "meeting-summary";
   }
+  if (
+    text.includes("記事執筆") ||
+    text.includes("記事を書") ||
+    text.includes("ブログ記事")
+  ) {
+    return "article-writer";
+  }
   return null;
 }
 
@@ -108,6 +130,8 @@ export function intentLabel(type: IntentType): string {
       return "採用ピッチ資料作成";
     case "meeting-summary":
       return "議事録要約";
+    case "article-writer":
+      return "記事執筆";
     case "general":
       return "一般応答";
   }
