@@ -44,6 +44,30 @@ const MAX_THREAD_MESSAGES = 40;
 const PLACEHOLDER_TEXT = ":hourglass_flowing_sand: 考え中...";
 const MENTION_PATTERN = /<@[A-Z0-9]+>/;
 
+const HELP_MESSAGE = `:wave: *華 - AI秘書Bot* の使い方
+
+私は ZiC の業務を支援する AI 秘書です。以下の機能があります。
+
+*■ 議事録から作る*
+• タスク抽出 — \`@zi-secretary タスク抽出\`
+• 議事録要約 — \`@zi-secretary 議事録要約\`
+※ チャンネルに議事録を貼ってから実行すると、その内容を使います
+
+*■ 採用支援*
+• 求人原稿 — \`@zi-secretary 求人原稿 Indeed 〇〇様\`
+   (媒体: Indeed / マイナビ / リクナビNEXT に対応)
+• 採用資料 — \`@zi-secretary 採用資料 〇〇様\`
+
+*■ マーケ支援*
+• 記事執筆 — \`@zi-secretary 記事 テーマや指示\`
+   (ブログ / コラム / オウンドメディア記事)
+
+*■ 便利な使い方*
+• *対話で仕上げる*: 私の返信にスレッドで返信すると、「もっとカジュアルに」「事例を追加して」など修正指示で磨けます
+• *ドキュメント納品*: 末尾に \`docs\` を付けると Google ドキュメントで納品します(例: \`@zi-secretary 記事 〇〇 docs\`)
+
+困ったら \`@zi-secretary ヘルプ\` でいつでもこの案内を表示します。`;
+
 function findIntentSourceText(replies: SlackThreadMessage[]): string {
   for (const msg of replies) {
     if (msg.bot_id) continue;
@@ -373,6 +397,20 @@ async function handleMention(
       }
 
       messages = [{ role: "user", content: userMessage }];
+    }
+
+    if (intent.type === "help") {
+      console.log("[handleMention] help intent, short-circuiting");
+      await postMultipartReply(
+        env.SLACK_BOT_TOKEN,
+        placeholder.channel,
+        replyTs,
+        placeholder.ts,
+        [HELP_MESSAGE],
+      );
+      cleanedUp = true;
+      console.log("[handleMention] done (help)");
+      return;
     }
 
     console.log("[handleMention] building system prompt...");

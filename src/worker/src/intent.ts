@@ -1,4 +1,5 @@
 export type IntentType =
+  | "help"
   | "task-extract"
   | "job-post"
   | "pitch-deck"
@@ -24,6 +25,14 @@ const ARTICLE_WRITER_KEYWORDS = [
   "ブログ",
   "コラム",
   "オウンドメディア",
+];
+const HELP_KEYWORDS = [
+  "ヘルプ",
+  "助けて",
+  "使い方",
+  "なにができ",
+  "何ができ",
+  "help",
 ];
 
 const MEDIA_RULES: Array<{ media: Media; keywords: string[] }> = [
@@ -60,6 +69,21 @@ function extractCompany(text: string): string | undefined {
 export function detectIntent(text: string): Intent {
   const lowered = text.toLowerCase();
   const company = extractCompany(text);
+
+  // help を最優先で判定。ただし他エージェント語が同時に含まれる場合は
+  // 他エージェントを優先(例:「ヘルプ記事を書いて」→ article-writer)。
+  if (containsAny(lowered, HELP_KEYWORDS)) {
+    const otherAgent =
+      containsAny(lowered, JOB_POST_KEYWORDS) ||
+      containsAny(lowered, PITCH_DECK_KEYWORDS) ||
+      containsAny(lowered, MEETING_SUMMARY_KEYWORDS) ||
+      containsAny(lowered, TASK_EXTRACT_KEYWORDS) ||
+      containsAny(lowered, ARTICLE_WRITER_KEYWORDS);
+    if (!otherAgent) {
+      return { type: "help" };
+    }
+    // 競合時は通常の分岐に流す
+  }
 
   if (containsAny(lowered, JOB_POST_KEYWORDS)) {
     const media = detectMedia(lowered) ?? "indeed";
@@ -122,6 +146,8 @@ export function hasExplicitAgentKeyword(text: string): IntentType | null {
 
 export function intentLabel(type: IntentType): string {
   switch (type) {
+    case "help":
+      return "ヘルプ";
     case "task-extract":
       return "タスク抽出";
     case "job-post":
