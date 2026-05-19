@@ -69,6 +69,35 @@ export function detectIntent(text: string): Intent {
   return { type: "general" };
 }
 
+export function hasExplicitAgentKeyword(text: string): IntentType | null {
+  const lowered = text.toLowerCase();
+  if (
+    text.includes("タスク抽出") ||
+    text.includes("タスクを抽出") ||
+    lowered.includes("todo抽出")
+  ) {
+    return "task-extract";
+  }
+  if (text.includes("求人原稿") || text.includes("求人票")) {
+    return "job-post";
+  }
+  if (
+    text.includes("採用資料") ||
+    text.includes("ピッチ資料") ||
+    text.includes("会社説明資料")
+  ) {
+    return "pitch-deck";
+  }
+  if (
+    text.includes("議事録要約") ||
+    text.includes("議事録をまとめ") ||
+    text.includes("議事録の要約")
+  ) {
+    return "meeting-summary";
+  }
+  return null;
+}
+
 export function intentLabel(type: IntentType): string {
   switch (type) {
     case "task-extract":

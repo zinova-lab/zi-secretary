@@ -174,6 +174,49 @@ export async function fetchChannelHistory(
   return json.messages ?? [];
 }
 
+export interface SlackThreadMessage {
+  user?: string;
+  text: string;
+  ts: string;
+  bot_id?: string;
+  subtype?: string;
+}
+
+interface SlackRepliesResponse {
+  ok: boolean;
+  messages?: SlackThreadMessage[];
+  error?: string;
+  response_metadata?: unknown;
+}
+
+export async function fetchThreadReplies(
+  token: string,
+  channel: string,
+  threadTs: string,
+): Promise<SlackThreadMessage[]> {
+  const params = new URLSearchParams({
+    channel,
+    ts: threadTs,
+    limit: "50",
+  });
+  const res = await fetch(
+    `https://slack.com/api/conversations.replies?${params.toString()}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  const json = (await res.json()) as SlackRepliesResponse;
+  if (!json.ok) {
+    throw new Error(
+      `conversations.replies failed: ${JSON.stringify(json)} (http=${res.status})`,
+    );
+  }
+  return json.messages ?? [];
+}
+
 const MEETING_MIN_LENGTH = 200;
 
 export function looksLikeMeetingNote(text: string): boolean {
