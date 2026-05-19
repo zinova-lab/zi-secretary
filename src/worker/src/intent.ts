@@ -17,6 +17,9 @@ export interface Intent {
 
 const JOB_POST_KEYWORDS = ["求人原稿", "求人"];
 const PITCH_DECK_KEYWORDS = ["採用資料", "ピッチ資料", "会社説明"];
+// TODO: "要約" 単独は汎用的な要約依頼にも反応する(誤検出余地あり)。
+// general に流す方が適切な場面もあるが、議事録要約の検出が弱くなる懸念があるため
+// 慎重判断が必要。今回はスコープ外として保留。
 const MEETING_SUMMARY_KEYWORDS = ["議事録要約", "要約", "サマリー"];
 const TASK_EXTRACT_KEYWORDS = ["タスク抽出", "タスク", "todo", "やること"];
 const ARTICLE_WRITER_KEYWORDS = [
@@ -55,10 +58,15 @@ function detectMedia(loweredText: string): Media | undefined {
 }
 
 function extractCompany(text: string): string | undefined {
-  const samaMatch = text.match(/([^\s「『【]+?)(?:様|さん)/);
+  // 長文ペースト中の誤抽出を避けるため、1行目のみを対象にする。
+  // 通常のコマンドは "@zi-secretary 求人原稿 Indeed 山田ホームズ様" のような
+  // 短い1行入力。長文の途中の「〜様」「〜株式会社」等にマッチしないようにする。
+  const firstLine = text.split("\n")[0] ?? "";
+
+  const samaMatch = firstLine.match(/([^\s「『【]+?)(?:様|さん)/);
   if (samaMatch && samaMatch[1]) return samaMatch[1];
 
-  const corpMatch = text.match(
+  const corpMatch = firstLine.match(
     /([^\s「『【]+?(?:株式会社|有限会社|合同会社|工務店|ホームズ|建設|建築))/,
   );
   if (corpMatch && corpMatch[1]) return corpMatch[1];
@@ -105,7 +113,12 @@ export function detectIntent(text: string): Intent {
 }
 
 export function wantsGoogleDoc(text: string): boolean {
-  return /(^|\s)docs(\s|$)/i.test(text) || text.includes("ドキュメント");
+  // 1行目のみで判定する。長文ペースト中の "docs" や「ドキュメント」に
+  // 誤反応しないようにする(コマンドは通常 1行で書かれる前提)。
+  const firstLine = text.split("\n")[0] ?? "";
+  return (
+    /(^|\s)docs(\s|$)/i.test(firstLine) || firstLine.includes("ドキュメント")
+  );
 }
 
 export function hasExplicitAgentKeyword(text: string): IntentType | null {
