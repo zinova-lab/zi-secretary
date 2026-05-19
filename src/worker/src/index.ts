@@ -23,10 +23,22 @@ import { askClaudeConversation, type ConversationMessage } from "./anthropic";
 import {
   detectIntent,
   hasExplicitAgentKeyword,
+  intentLabel,
+  wantsGoogleDoc,
   type Intent,
   type IntentType,
 } from "./intent";
 import { buildSystemPrompt } from "./prompt-builder";
+import { createGoogleDoc } from "./google-docs";
+
+function buildDocTitle(intent: Intent): string {
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const label = intentLabel(intent.type);
+  if (intent.company) {
+    return `${label} - ${intent.company} (${dateStr})`;
+  }
+  return `${label} (${dateStr})`;
+}
 
 const MAX_THREAD_MESSAGES = 40;
 const PLACEHOLDER_TEXT = ":hourglass_flowing_sand: 考え中...";
@@ -382,8 +394,39 @@ async function handleMention(
       ? `${reply}\n\n---\n(注:会話が長くなったため、古い一部のやりとりは省略されています)`
       : reply;
 
-    const parts = splitForSlack(finalReply);
-    console.log("[handleMention] split into", parts.length, "parts");
+    const useDocs = wantsGoogleDoc(stripBotMention(event.text));
+    let postParts: string[];
+
+    if (useDocs) {
+      console.log("[handleMention] google doc requested");
+      try {
+        const title = buildDocTitle(intent);
+        const docUrl = await createGoogleDoc(
+          env.GOOGLE_SERVICE_ACCOUNT_JSON,
+          title,
+          reply,
+        );
+        console.log("[handleMention] google doc created:", docUrl);
+        const noticeSuffix = truncated
+          ? "\n(注:会話が長くなったため、古い一部のやりとりは省略されています)"
+          : "";
+        postParts = [
+          `:page_facing_up: ${intentLabel(intent.type)}をGoogle ドキュメントで作成しました\n${docUrl}${noticeSuffix}`,
+        ];
+      } catch (docErr) {
+        const detail =
+          docErr instanceof Error ? docErr.message : String(docErr);
+        console.error("[handleMention] google doc failed:", detail);
+        postParts = [
+          ":warning: Google ドキュメントの作成に失敗しました。本文を以下に投稿します。",
+          ...splitForSlack(finalReply),
+        ];
+      }
+    } else {
+      postParts = splitForSlack(finalReply);
+    }
+
+    console.log("[handleMention] split into", postParts.length, "parts");
 
     console.log("[handleMention] posting reply (multipart)...");
     await postMultipartReply(
@@ -391,7 +434,7 @@ async function handleMention(
       placeholder.channel,
       replyTs,
       placeholder.ts,
-      parts,
+      postParts,
     );
     cleanedUp = true;
     console.log("[handleMention] done");
