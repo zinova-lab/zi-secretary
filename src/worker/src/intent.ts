@@ -5,6 +5,7 @@ export type IntentType =
   | "pitch-deck"
   | "meeting-summary"
   | "article-writer"
+  | "email-writer"
   | "general";
 
 export type Media = "indeed" | "mynavi" | "rikunavi-next";
@@ -28,6 +29,16 @@ const ARTICLE_WRITER_KEYWORDS = [
   "ブログ",
   "コラム",
   "オウンドメディア",
+];
+// TODO: "メール" 単独は汎用的なメール話題にも反応する余地あり。
+// 誤検出が観測されたらキーワードを絞る(例:「メール」を外し
+// 「メール文面」「営業メール」「ビジネスメール」のみに限定)。
+const EMAIL_WRITER_KEYWORDS = [
+  "メール",
+  "営業メール",
+  "文面",
+  "ビジネスメール",
+  "営業文面",
 ];
 const HELP_KEYWORDS = [
   "ヘルプ",
@@ -86,7 +97,8 @@ export function detectIntent(text: string): Intent {
       containsAny(lowered, PITCH_DECK_KEYWORDS) ||
       containsAny(lowered, MEETING_SUMMARY_KEYWORDS) ||
       containsAny(lowered, TASK_EXTRACT_KEYWORDS) ||
-      containsAny(lowered, ARTICLE_WRITER_KEYWORDS);
+      containsAny(lowered, ARTICLE_WRITER_KEYWORDS) ||
+      containsAny(lowered, EMAIL_WRITER_KEYWORDS);
     if (!otherAgent) {
       return { type: "help" };
     }
@@ -108,6 +120,9 @@ export function detectIntent(text: string): Intent {
   }
   if (containsAny(lowered, ARTICLE_WRITER_KEYWORDS)) {
     return { type: "article-writer", company };
+  }
+  if (containsAny(lowered, EMAIL_WRITER_KEYWORDS)) {
+    return { type: "email-writer", company };
   }
   return { type: "general" };
 }
@@ -154,6 +169,15 @@ export function hasExplicitAgentKeyword(text: string): IntentType | null {
   ) {
     return "article-writer";
   }
+  if (
+    text.includes("営業メール") ||
+    text.includes("ビジネスメール") ||
+    text.includes("メール文面") ||
+    text.includes("メールを書") ||
+    text.includes("文面を書")
+  ) {
+    return "email-writer";
+  }
   return null;
 }
 
@@ -171,6 +195,8 @@ export function intentLabel(type: IntentType): string {
       return "議事録要約";
     case "article-writer":
       return "記事執筆";
+    case "email-writer":
+      return "メール文面作成";
     case "general":
       return "一般応答";
   }

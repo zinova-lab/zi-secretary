@@ -62,6 +62,10 @@ const HELP_MESSAGE = `:wave: *華 - AI秘書Bot* の使い方
 • 記事執筆 — \`@zi-secretary 記事 テーマや指示\`
    (ブログ / コラム / オウンドメディア記事)
 
+*■ 営業支援*
+• メール文面 — \`@zi-secretary 営業メール 〇〇株式会社にフォローアップ\`
+   (新規営業 / フォローアップ / お礼 / 提案 / お断り 等)
+
 *■ 便利な使い方*
 • *対話で仕上げる*: 私の返信にスレッドで返信すると、「もっとカジュアルに」「事例を追加して」など修正指示で磨けます
 • *ドキュメント納品*: 末尾に \`docs\` を付けると Google ドキュメントで納品します(例: \`@zi-secretary 記事 〇〇 docs\`)
@@ -95,6 +99,7 @@ function needsMeetingContext(intent: Intent): boolean {
     intent.type === "job-post" ||
     intent.type === "pitch-deck" ||
     intent.type === "article-writer" ||
+    intent.type === "email-writer" ||
     intent.type === "general"
   );
 }

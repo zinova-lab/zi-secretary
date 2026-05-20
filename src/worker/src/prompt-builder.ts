@@ -131,6 +131,19 @@ export async function buildSystemPrompt(
       );
       break;
     }
+    case "email-writer": {
+      const [hub, agent, meetingSection] = await Promise.all([
+        fetchPrompt(HUB_PATH),
+        fetchPrompt("prompts/agent-email-writer.md"),
+        getMeetingSection(userMeetingNote, "対象議事録(参考文脈)"),
+      ]);
+      sections.push(
+        { title: "ハブプロンプト", content: hub },
+        { title: "メール文面エージェント", content: agent },
+        meetingSection,
+      );
+      break;
+    }
     case "general": {
       const [hub, agent] = await Promise.all([
         fetchPrompt(HUB_PATH),
