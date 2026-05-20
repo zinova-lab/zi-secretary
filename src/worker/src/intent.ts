@@ -85,9 +85,20 @@ function extractCompany(text: string): string | undefined {
   return undefined;
 }
 
+// welcome トリガー判定:単独の「スタート」「start」(大小区別なし、語境界)。
+// containsAny の単純な includes() だと "startup" 等で誤検出するため、
+// word-boundary 付き正規表現で厳格に判定する。
+const WELCOME_KEYWORD_PATTERN = /(^|\s)(スタート|start)(\s|$)/i;
+
 export function detectIntent(text: string): Intent {
   const lowered = text.toLowerCase();
   const company = extractCompany(text);
+
+  // 空メンション or 単独「スタート」/「start」 → welcome(= help intent)。
+  // これらは他エージェント語と同時には出にくいため、ガードなしで最優先。
+  if (text.trim().length === 0 || WELCOME_KEYWORD_PATTERN.test(text)) {
+    return { type: "help" };
+  }
 
   // help を最優先で判定。ただし他エージェント語が同時に含まれる場合は
   // 他エージェントを優先(例:「ヘルプ記事を書いて」→ article-writer)。

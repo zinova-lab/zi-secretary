@@ -45,6 +45,133 @@ const MAX_THREAD_MESSAGES = 40;
 const PLACEHOLDER_TEXT = ":hourglass_flowing_sand: 考え中...";
 const MENTION_PATTERN = /<@[A-Z0-9]+>/;
 
+// Block Kit による歓迎/メニュー表示。空メンション or "スタート" / "start" /
+// "ヘルプ" / "使い方" / "help" 等の welcome トリガーで表示。
+// 既存の HELP_MESSAGE はこの Block Kit メッセージの「fallback text」として
+// 引き続き使用される(通知文字列、Block 非対応クライアントでの表示)。
+const WELCOME_BLOCKS: unknown[] = [
+  {
+    type: "header",
+    text: {
+      type: "plain_text",
+      text: "🤖 こんにちは!華です",
+      emoji: true,
+    },
+  },
+  {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "Zinova Creation の業務を支援する AI 秘書です。\n採用 / マーケ / 営業 / 議事録活用を、一言の指示でサポートします。",
+    },
+  },
+  { type: "divider" },
+  {
+    type: "header",
+    text: {
+      type: "plain_text",
+      text: "👥 採用支援",
+      emoji: true,
+    },
+  },
+  {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "*求人原稿*(Indeed / マイナビ / リクナビNEXT 対応)\n`@zi-secretary 求人原稿 Indeed 山田工務店様`\n\n*採用ピッチ資料*\n`@zi-secretary 採用資料 山田工務店様`",
+    },
+  },
+  { type: "divider" },
+  {
+    type: "header",
+    text: {
+      type: "plain_text",
+      text: "📝 マーケ支援",
+      emoji: true,
+    },
+  },
+  {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "*記事執筆*(ブログ / コラム / オウンドメディア)\n`@zi-secretary 記事 中小企業のSlack活用術`",
+    },
+  },
+  { type: "divider" },
+  {
+    type: "header",
+    text: {
+      type: "plain_text",
+      text: "💼 営業支援",
+      emoji: true,
+    },
+  },
+  {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "*ビジネスメール*(営業 / フォローアップ / お礼 / 提案 / お断り)\n`@zi-secretary 営業メール 山田工務店様にフォローアップ`\n`@zi-secretary メール 商談後のお礼を〇〇様に`",
+    },
+  },
+  { type: "divider" },
+  {
+    type: "header",
+    text: {
+      type: "plain_text",
+      text: "📋 議事録活用",
+      emoji: true,
+    },
+  },
+  {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "議事録テキストを Slack に貼り付けた直後に呼び出します。\n\n*議事録要約*\n`@zi-secretary 議事録要約`\n\n*タスク抽出*\n`@zi-secretary タスク抽出`",
+    },
+  },
+  { type: "divider" },
+  {
+    type: "header",
+    text: {
+      type: "plain_text",
+      text: "✨ 便利な使い方",
+      emoji: true,
+    },
+  },
+  {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "*スレッドで対話的に磨く*\n華の応答に「@zi-secretary もっと押し強めに」「短く」など返すと、その指示で再生成します。\n\n*Google ドキュメントで納品*\n末尾に `docs` を付けると Google ドキュメントに出力します。\n例:`@zi-secretary 記事 〇〇 docs`",
+    },
+  },
+  { type: "divider" },
+  {
+    type: "header",
+    text: {
+      type: "plain_text",
+      text: "🚀 まず試してみる",
+      emoji: true,
+    },
+  },
+  {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "• `@zi-secretary 記事 リモートワーク導入のコツ`\n• `@zi-secretary 営業メール 商談後のお礼を山田様に`\n• `@zi-secretary 採用資料 山田工務店様`",
+    },
+  },
+  {
+    type: "context",
+    elements: [
+      {
+        type: "mrkdwn",
+        text: "💡 困った時はいつでも `@zi-secretary ヘルプ` でこのメニューを表示します。",
+      },
+    ],
+  },
+];
+
 const HELP_MESSAGE = `:wave: *華 - AI秘書Bot* の使い方
 
 私は ZiC の業務を支援する AI 秘書です。以下の機能があります。
@@ -356,11 +483,18 @@ async function handleMention(
       const intentSourceText = findIntentSourceText(replies);
       const rootIntent = detectIntent(intentSourceText);
       const latestUserText = stripBotMention(event.text);
+      const latestIntent = detectIntent(latestUserText);
       const explicit: IntentType | null =
         hasExplicitAgentKeyword(latestUserText);
-      intent = explicit
-        ? { ...detectIntent(latestUserText), type: explicit }
-        : rootIntent;
+      // 最新ユーザー発言が welcome トリガー(空メンション/スタート/ヘルプ等)なら
+      // スレッド継続を無視して welcome を表示。
+      if (latestIntent.type === "help") {
+        intent = { type: "help" };
+      } else if (explicit) {
+        intent = { ...detectIntent(latestUserText), type: explicit };
+      } else {
+        intent = rootIntent;
+      }
       console.log("[handleMention] intent(root):", rootIntent);
       console.log("[handleMention] intent(effective):", intent);
 
@@ -441,16 +575,30 @@ async function handleMention(
     }
 
     if (intent.type === "help") {
-      console.log("[handleMention] help intent, short-circuiting");
-      await postMultipartReply(
+      console.log("[handleMention] help/welcome intent, short-circuiting");
+      try {
+        await deleteSlackMessage(
+          env.SLACK_BOT_TOKEN,
+          placeholder.channel,
+          placeholder.ts,
+        );
+      } catch (delErr) {
+        const detail =
+          delErr instanceof Error ? delErr.message : String(delErr);
+        console.error(
+          "[handleMention] welcome: failed to delete placeholder:",
+          detail,
+        );
+      }
+      await postSlackMessage(
         env.SLACK_BOT_TOKEN,
         placeholder.channel,
+        HELP_MESSAGE,
         replyTs,
-        placeholder.ts,
-        [HELP_MESSAGE],
+        WELCOME_BLOCKS,
       );
       cleanedUp = true;
-      console.log("[handleMention] done (help)");
+      console.log("[handleMention] done (welcome)");
       return;
     }
 
