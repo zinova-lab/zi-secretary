@@ -324,8 +324,18 @@ export async function createGoogleDoc(
     ]);
   }
 
-  console.log("[google-docs] sharing document...");
-  await makeAnyoneReader(accessToken, documentId);
+  // 共有設定(anyone:reader)はスキップ。
+  // 理由:共有ドライブ「ZiC ドキュメント」のメンバーは共有設定なしでも閲覧可能。
+  // makeAnyoneReader を呼ぶと処理時間が +2-3 秒、Claude 応答+Docs 書き込みと
+  // 合算で waitUntil grace を超え、Slack 完了通知が間に合わない事象が発生した。
+  // 外部共有が必要な場合は受け手側で Docs を開いて手動で「リンクを知っている
+  // 全員」に変更する運用とする。
+  // TODO: streaming レスポンス対応 or 共有設定の非同期化(Cloudflare Queues 等)で
+  // 時間予算が広がれば、makeAnyoneReader を再度呼び出して自動共有に戻す。
+  // makeAnyoneReader 関数本体は将来の再有効化に備えて残置。
+  console.log(
+    "[google-docs] skipping share step (shared drive member access only)",
+  );
 
   const url = `https://docs.google.com/document/d/${documentId}/edit`;
   console.log("[google-docs] done:", url);
