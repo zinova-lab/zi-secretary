@@ -2,11 +2,12 @@ import Anthropic from "@anthropic-ai/sdk";
 
 // 速度優先で Haiku を採用。品質を上げたい場合は "claude-sonnet-4-6" に切り替え。
 const MODEL = "claude-haiku-4-5-20251001";
-// 日本語+Markdownでの実測:2000 tokens ≒ 2000-3000字で末尾切れが発生していた。
-// 4000 tokens ≒ 5000-6000字相当で、記事執筆など長文成果物にも安全。
-// 全エージェントの共通上限として作用するが、各エージェント側のプロンプトで
-// 適切な目安字数を指示しているため、無駄な肥大化は起きない。
-const MAX_TOKENS = 4000;
+// 「末尾切れ防止」と「25秒タイムアウト回避」の両立点。
+// 実測:2000 では 2300-2500字で末尾切れ、4000 では Haiku 4.5 の出力速度では
+// 25秒に収まらずタイムアウト発生。3000 tokens ≒ 日本語4000〜4500字相当で、
+// 記事執筆の目安 2000〜3500字を安全に書き切れる中間最適点。
+// 将来 Sonnet に切り替えるか streaming 対応すればさらに拡張可能。
+const MAX_TOKENS = 3000;
 const MAX_RETRIES = 3;
 const RETRY_DELAYS_MS = [0, 2000, 5000];
 const CLAUDE_TIMEOUT_MS = 25000;
