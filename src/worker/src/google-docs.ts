@@ -1,8 +1,11 @@
-// サービスアカウントは Drive ストレージを持たないため、共有ドライブ配下に作成する。
-// 共有ドライブ「ZiC ドキュメント」に hana-docs サービスアカウントを
-// 「コンテンツ管理者」として招待済み。共有ドライブ操作には Drive API 呼び出しに
-// supportsAllDrives=true が必須。
-const SHARED_FOLDER_ID = "1GyBrm9-Ii4XmGvfeKedKhgTGOTcwFl4p";
+// サービスアカウントは Drive ストレージを持たないため、Workspace の共有ドライブ
+// (Shared Drive)配下に作成する。共有ドライブ「ZiC ドキュメント」(info@zinovacreation.com
+// の Workspace 配下)に hana-docs サービスアカウントを「コンテンツ管理者」として
+// 招待済み。parents に共有ドライブ自体の ID を指定すると、共有ドライブのルートに
+// ファイルが作成され、ストレージは共有ドライブ所有になる。
+// 共有ドライブ ID は "0A" で始まる短い形式(個別フォルダ ID とは異なる)。
+// 共有ドライブ API 呼び出しには supportsAllDrives=true が必須。
+const SHARED_FOLDER_ID = "0AAiu8QWBfZcFUk9PVA";
 
 interface ServiceAccount {
   client_email: string;
