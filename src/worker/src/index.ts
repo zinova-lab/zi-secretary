@@ -25,6 +25,7 @@ import {
   hasExplicitAgentKeyword,
   intentLabel,
   wantsGoogleDoc,
+  wantsMeetingContext,
   type Intent,
   type IntentType,
 } from "./intent";
@@ -102,6 +103,14 @@ function needsMeetingContext(intent: Intent): boolean {
     intent.type === "email-writer" ||
     intent.type === "general"
   );
+}
+
+// 議事録を必ず含めるべきエージェント(議事録抜きでは機能しない)。
+// それ以外(article-writer / job-post / pitch-deck / email-writer / general)は
+// wantsMeetingContext で明示的にユーザーが要求した時のみ含めて、
+// 通常用途では system prompt の肥大化を避ける。
+function requiresMeetingContext(intent: Intent): boolean {
+  return intent.type === "task-extract" || intent.type === "meeting-summary";
 }
 
 async function findMeetingNoteInHistory(
@@ -356,14 +365,26 @@ async function handleMention(
       console.log("[handleMention] intent(effective):", intent);
 
       if (needsMeetingContext(intent)) {
-        console.log(
-          "[handleMention] fetching channel history before thread root...",
-        );
-        userMeetingNote = await findMeetingNoteInHistory(
-          env.SLACK_BOT_TOKEN,
-          event.channel,
-          event.thread_ts,
-        );
+        const forceUse = requiresMeetingContext(intent);
+        const userOptIn = wantsMeetingContext(latestUserText);
+        if (forceUse || userOptIn) {
+          console.log(
+            "[handleMention] fetching channel history before thread root... (forceUse:",
+            forceUse,
+            "userOptIn:",
+            userOptIn,
+            ")",
+          );
+          userMeetingNote = await findMeetingNoteInHistory(
+            env.SLACK_BOT_TOKEN,
+            event.channel,
+            event.thread_ts,
+          );
+        } else {
+          console.log(
+            "[handleMention] meeting context skipped (opt-in only, not requested)",
+          );
+        }
       }
 
       const conv = repliesToConversation(replies, placeholder.ts);
@@ -389,15 +410,29 @@ async function handleMention(
       console.log("[handleMention] intent:", intent);
 
       if (needsMeetingContext(intent)) {
-        console.log("[handleMention] fetching channel history...");
-        userMeetingNote = await findMeetingNoteInHistory(
-          env.SLACK_BOT_TOKEN,
-          event.channel,
-          event.ts,
-        );
-        if (!userMeetingNote) {
+        const forceUse = requiresMeetingContext(intent);
+        const userOptIn = wantsMeetingContext(userMessage);
+        if (forceUse || userOptIn) {
           console.log(
-            "[handleMention] no user meeting note in recent history; using sample",
+            "[handleMention] fetching channel history... (forceUse:",
+            forceUse,
+            "userOptIn:",
+            userOptIn,
+            ")",
+          );
+          userMeetingNote = await findMeetingNoteInHistory(
+            env.SLACK_BOT_TOKEN,
+            event.channel,
+            event.ts,
+          );
+          if (!userMeetingNote) {
+            console.log(
+              "[handleMention] no user meeting note in recent history; using sample",
+            );
+          }
+        } else {
+          console.log(
+            "[handleMention] meeting context skipped (opt-in only, not requested)",
           );
         }
       }

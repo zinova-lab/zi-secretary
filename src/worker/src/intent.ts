@@ -127,6 +127,24 @@ export function detectIntent(text: string): Intent {
   return { type: "general" };
 }
 
+// 入力テキストに議事録活用を明示するキーワードが含まれるかを判定する。
+// 議事録必須エージェント (task-extract / meeting-summary) 以外では、
+// このフラグが true の時だけ議事録コンテキストを system prompt に含める。
+// → 通常用途で system prompt が肥大化せず、25 秒タイムアウト回避につながる。
+export function wantsMeetingContext(text: string): boolean {
+  const keywords = [
+    "議事録から",
+    "議事録ベース",
+    "議事録活用",
+    "この議事録",
+    "議事録の",
+    "議事録を踏まえ",
+    "議事録を元に",
+    "議事録に基づ",
+  ];
+  return keywords.some((kw) => text.includes(kw));
+}
+
 export function wantsGoogleDoc(text: string): boolean {
   // 1行目のみで判定する。長文ペースト中の "docs" や「ドキュメント」に
   // 誤反応しないようにする(コマンドは通常 1行で書かれる前提)。
