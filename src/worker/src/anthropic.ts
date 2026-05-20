@@ -1,6 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-// 速度優先で Haiku を採用。品質を上げたい場合は "claude-sonnet-4-6" に切り替え。
 // 速度優先で Haiku 4.5 を採用。
 // Sonnet 4.6 は品質は高いが、入力プロンプトを 11500→5025 字に圧縮しても
 // Cloudflare Workers の 25 秒制限内で出力 3000 tokens を生成しきれなかった。
@@ -16,7 +15,13 @@ const MODEL = "claude-haiku-4-5-20251001";
 const MAX_TOKENS = 3000;
 const MAX_RETRIES = 3;
 const RETRY_DELAYS_MS = [0, 2000, 5000];
-const CLAUDE_TIMEOUT_MS = 25000;
+// Workers 30 秒制限に対し 2 秒マージンで 28 秒に設定。
+// 旧 25 秒(5 秒マージン)では、Haiku + 入力 5025字 + 出力 3000 tokens の
+// 構成でも API 完了が 26-28 秒に到達するケースがあり、自主タイムアウトに
+// 引っ掛かっていた。実時間ログ(各 attempt の所要時間)も併せて出力し、
+// 「タイムアウト延長で救えるケースなのか、それともより深いボトルネックか」
+// を切り分け可能にする。
+const CLAUDE_TIMEOUT_MS = 28000;
 
 export interface ConversationMessage {
   role: "user" | "assistant";
@@ -34,7 +39,8 @@ function isRetryableError(err: unknown): boolean {
     message.includes("503") ||
     message.includes("502") ||
     message.includes("504") ||
-    message.includes("network")
+    message.includes("network") ||
+    message.includes("timeout")
   );
 }
 
@@ -55,6 +61,7 @@ export async function askClaudeConversation(
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
 
+    const startMs = Date.now();
     try {
       const apiPromise = client.messages.create({
         model: MODEL,
@@ -72,15 +79,21 @@ export async function askClaudeConversation(
 
       const response = await Promise.race([apiPromise, timeoutPromise]);
 
+      const elapsedMs = Date.now() - startMs;
+      console.log(
+        `[askClaudeConversation] attempt ${attempt + 1} succeeded in ${elapsedMs}ms`,
+      );
+
       return response.content
         .map((block) => (block.type === "text" ? block.text : ""))
         .join("")
         .trim();
     } catch (err) {
       lastError = err;
+      const elapsedMs = Date.now() - startMs;
       const detail = err instanceof Error ? err.message : String(err);
       console.error(
-        `[askClaudeConversation] attempt ${attempt + 1} failed:`,
+        `[askClaudeConversation] attempt ${attempt + 1} failed in ${elapsedMs}ms:`,
         detail,
       );
 
