@@ -1,6 +1,8 @@
-// サービスアカウントは Drive ストレージを持たないため、共有フォルダ配下に作成する。
-// ユーザーが所有する Drive フォルダを hana-docs サービスアカウントに編集者権限で共有済み。
-const SHARED_FOLDER_ID = "12cIRWAdrVLat4-FsGM6JqIRCxh2PcUst";
+// サービスアカウントは Drive ストレージを持たないため、共有ドライブ配下に作成する。
+// 共有ドライブ「ZiC ドキュメント」に hana-docs サービスアカウントを
+// 「コンテンツ管理者」として招待済み。共有ドライブ操作には Drive API 呼び出しに
+// supportsAllDrives=true が必須。
+const SHARED_FOLDER_ID = "1GyBrm9-Ii4XmGvfeKedKhgTGOTcwFl4p";
 
 interface ServiceAccount {
   client_email: string;
@@ -135,18 +137,21 @@ async function createDocument(
   accessToken: string,
   title: string,
 ): Promise<string> {
-  const res = await fetch("https://www.googleapis.com/drive/v3/files", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
+  const res = await fetch(
+    "https://www.googleapis.com/drive/v3/files?supportsAllDrives=true",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        name: title,
+        mimeType: "application/vnd.google-apps.document",
+        parents: [SHARED_FOLDER_ID],
+      }),
     },
-    body: JSON.stringify({
-      name: title,
-      mimeType: "application/vnd.google-apps.document",
-      parents: [SHARED_FOLDER_ID],
-    }),
-  });
+  );
   if (!res.ok) {
     const text = await res.text();
     throw new Error(
@@ -157,6 +162,7 @@ async function createDocument(
   if (!json.id) {
     throw new Error("[google-docs] step create failed: no id in response");
   }
+  console.log("[google-docs] document created in shared drive:", json.id);
   return json.id;
 }
 
@@ -274,7 +280,7 @@ async function makeAnyoneReader(
   documentId: string,
 ): Promise<void> {
   const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${documentId}/permissions`,
+    `https://www.googleapis.com/drive/v3/files/${documentId}/permissions?supportsAllDrives=true`,
     {
       method: "POST",
       headers: {
