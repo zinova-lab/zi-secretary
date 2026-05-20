@@ -8,11 +8,23 @@ import Anthropic from "@anthropic-ai/sdk";
 // 将来 streaming レスポンス対応 or Workers Paid プラン(CPU 時間拡張)を
 // 導入すれば、Sonnet 4.6 再導入を再検討する。
 const MODEL = "claude-haiku-4-5-20251001";
-// MAX_TOKENS=3000 は「末尾切れ防止」と「タイムアウト回避」の両立点。
-// 3000 tokens ≒ 日本語 4000〜4500字相当、記事執筆の目安 2000〜3500字を
-// 安全に書き切れる。他エージェント(議事録要約 500-800字、メール文面
-// 100-400字 等)は遥かに小さい範囲で完結するため影響なし。
-const MAX_TOKENS = 3000;
+// MAX_TOKENS=2500 は「Claude 応答時間 + Google Docs 作成時間」を
+// waitUntil grace に収めるための値。
+//
+// 3000 では Claude 単体 28 秒、Docs 作成と合わせて waitUntil 超過
+// (waitUntil() tasks did not complete within the allowed time)。
+// 2500 tokens ≒ 日本語 3000-4000字、記事執筆の実用十分な長さ。
+// Claude 完了が約 20-23 秒見込みで、Docs 処理(5-10 秒)と合計しても
+// 30 秒前後に収まる想定。
+//
+// 履歴:
+//  - 2000(末尾切れ発生)
+//  - 4000(タイムアウト、Workers 上限超過)
+//  - 3000(Claude 単体は完了、ただし Docs と合算で waitUntil 超過)
+//  - 2500(本日確定、Claude + Docs を waitUntil 内に収める)
+//
+// 観測後、CLAUDE_TIMEOUT_MS の最適値も再評価予定(現在 45 秒)。
+const MAX_TOKENS = 2500;
 const MAX_RETRIES = 3;
 const RETRY_DELAYS_MS = [0, 2000, 5000];
 // 45 秒に設定。Workers の CPU 時間制限(30 秒)は fetch() による
