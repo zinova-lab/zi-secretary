@@ -32,6 +32,33 @@ import {
 import { buildSystemPrompt } from "./prompt-builder";
 import { createGoogleDoc } from "./google-docs";
 
+// マルチエージェント構成。各 Bot は独立した Slack App として登録され、
+// その Bot Token で chat.postMessage を呼ぶと Slack 上では各 Bot のアイデンティティ
+// (Bot 名 / アイコン)で投稿される。username / icon_emoji の上書きは使わない。
+type BotType = "hub" | "minato";
+
+interface BotConfig {
+  displayName: string;
+  iconEmoji: string;
+  getToken: (env: Env) => string;
+  getSigningSecret: (env: Env) => string;
+}
+
+const BOT_CONFIGS: Record<BotType, BotConfig> = {
+  hub: {
+    displayName: "華",
+    iconEmoji: ":cherry_blossom:",
+    getToken: (env) => env.SLACK_BOT_TOKEN,
+    getSigningSecret: (env) => env.SLACK_SIGNING_SECRET,
+  },
+  minato: {
+    displayName: "湊",
+    iconEmoji: ":briefcase:",
+    getToken: (env) => env.MINATO_BOT_TOKEN,
+    getSigningSecret: (env) => env.MINATO_SIGNING_SECRET,
+  },
+};
+
 function buildDocTitle(intent: Intent): string {
   const dateStr = new Date().toISOString().slice(0, 10);
   const label = intentLabel(intent.type);
@@ -110,7 +137,7 @@ const WELCOME_BLOCKS: unknown[] = [
     type: "section",
     text: {
       type: "mrkdwn",
-      text: "*ビジネスメール*(営業 / フォローアップ / お礼 / 提案 / お断り)\n`@zi-secretary 営業メール 山田工務店様にフォローアップ`\n`@zi-secretary メール 商談後のお礼を〇〇様に`",
+      text: "*ビジネスメール*(華が対応)\n`@zi-secretary 営業メール 山田工務店様にフォローアップ`\n`@zi-secretary メール 商談後のお礼を〇〇様に`\n\n*営業サポート*(湊が対応)\n提案書 / 商談記録 / 企業情報整理 / ネクストアクション / 営業ストーリー\n`@zi-secretary 営業サポート 提案書 〇〇株式会社向け`\n`@minato 提案書 〇〇株式会社向け`",
     },
   },
   { type: "divider" },
@@ -159,6 +186,22 @@ const WELCOME_BLOCKS: unknown[] = [
     text: {
       type: "mrkdwn",
       text: "• `@zi-secretary 記事 リモートワーク導入のコツ`\n• `@zi-secretary 営業メール 商談後のお礼を山田様に`\n• `@zi-secretary 採用資料 山田工務店様`",
+    },
+  },
+  { type: "divider" },
+  {
+    type: "header",
+    text: {
+      type: "plain_text",
+      text: "👥 チームメンバー",
+      emoji: true,
+    },
+  },
+  {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "🌸 *華* - 全体統括 / 案内 / ヘルプ\n💼 *湊* - 営業担当(提案書・商談記録・営業ストーリー)\n📋 *凪* - 雑務担当(近日参加)\n🔔 *鈴* - 調査担当(近日参加)",
     },
   },
   {
@@ -602,6 +645,21 @@ async function handleMention(
       return;
     }
 
+    if (intent.type === "sales-support") {
+      console.log("[handleMention] sales-support intent, delegating to minato");
+      const userMessageForMinato = stripBotMention(event.text);
+      await delegateToMinato(
+        env,
+        placeholder.channel,
+        replyTs,
+        userMessageForMinato,
+        placeholder,
+      );
+      cleanedUp = true;
+      console.log("[handleMention] done (delegated to minato)");
+      return;
+    }
+
     console.log("[handleMention] building system prompt...");
     let systemPrompt = await buildSystemPrompt(intent, userMeetingNote);
     if (multiUser) {
@@ -736,5 +794,257 @@ async function handleMention(
     }
   }
 }
+
+// ────────────────────────────────────────────────────────────
+// 湊(営業担当 Bot)関連
+// ────────────────────────────────────────────────────────────
+
+// 湊として実際の作業を行うコア関数。ハブからの委譲・直接メンションの両方から
+// 呼ばれる。intent は sales-support に固定し、議事録は opt-in のみ、docs 納品
+// 分岐は既存ロジックを再利用する。
+async function executeMinatoTask(
+  env: Env,
+  channel: string,
+  threadTs: string,
+  userMessage: string,
+  postAnnouncement: boolean,
+): Promise<void> {
+  const minatoToken = BOT_CONFIGS.minato.getToken(env);
+  let placeholder: PostedMessage | null = null;
+
+  if (postAnnouncement) {
+    try {
+      placeholder = await postSlackMessage(
+        minatoToken,
+        channel,
+        "湊です。承りました、作成中です…",
+        threadTs,
+      );
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error(
+        "[executeMinatoTask] announcement post failed:",
+        detail,
+      );
+    }
+  }
+
+  try {
+    const baseIntent = detectIntent(userMessage);
+    const intent: Intent = {
+      ...baseIntent,
+      type: "sales-support",
+    };
+    console.log("[executeMinatoTask] intent:", intent);
+
+    let userMeetingNote: string | undefined;
+    if (wantsMeetingContext(userMessage)) {
+      console.log(
+        "[executeMinatoTask] meeting context requested, fetching history...",
+      );
+      userMeetingNote = await findMeetingNoteInHistory(
+        minatoToken,
+        channel,
+        threadTs,
+      );
+    }
+
+    const systemPrompt = await buildSystemPrompt(intent, userMeetingNote);
+    console.log(
+      "[executeMinatoTask] system prompt length:",
+      systemPrompt.length,
+    );
+
+    const reply = await askClaudeConversation(env.ANTHROPIC_API_KEY, systemPrompt, [
+      { role: "user", content: userMessage },
+    ]);
+    console.log("[executeMinatoTask] reply length:", reply.length);
+
+    const useDocs = wantsGoogleDoc(userMessage);
+    let postParts: string[];
+    if (useDocs) {
+      console.log("[executeMinatoTask] google doc requested");
+      try {
+        const title = buildDocTitle(intent);
+        const docUrl = await createGoogleDoc(
+          env.GOOGLE_SERVICE_ACCOUNT_JSON,
+          title,
+          reply,
+        );
+        console.log("[executeMinatoTask] google doc created:", docUrl);
+        postParts = [
+          `:page_facing_up: ${intentLabel(intent.type)}をGoogle ドキュメントで作成しました\n${docUrl}`,
+        ];
+      } catch (docErr) {
+        const detail =
+          docErr instanceof Error ? docErr.message : String(docErr);
+        console.error("[executeMinatoTask] google doc failed:", detail);
+        postParts = [
+          ":warning: Google ドキュメントの作成に失敗しました。本文を以下に投稿します。",
+          ...splitForSlack(reply),
+        ];
+      }
+    } else {
+      postParts = splitForSlack(reply);
+    }
+
+    if (placeholder) {
+      await postMultipartReply(
+        minatoToken,
+        placeholder.channel,
+        threadTs,
+        placeholder.ts,
+        postParts,
+      );
+    } else {
+      for (const part of postParts) {
+        await postSlackMessage(minatoToken, channel, part, threadTs);
+      }
+    }
+  } catch (err) {
+    const detail =
+      err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    console.error("[executeMinatoTask] error:", detail);
+    try {
+      await postSlackMessage(
+        minatoToken,
+        channel,
+        `:warning: 湊が応答できませんでした。少し時間を置いて再度お試しください。`,
+        threadTs,
+      );
+      if (placeholder) {
+        await deleteSlackMessage(minatoToken, placeholder.channel, placeholder.ts);
+      }
+    } catch (cleanupErr) {
+      const cleanupDetail =
+        cleanupErr instanceof Error
+          ? cleanupErr.message
+          : String(cleanupErr);
+      console.error("[executeMinatoTask] cleanup failed:", cleanupDetail);
+    }
+  }
+}
+
+// ハブから湊への委譲。ハブの「考え中」プレースホルダーを削除し、ハブとして
+// 引き継ぎ宣言を投稿してから湊を起動する。完了後にハブとして締めメッセージも投稿。
+async function delegateToMinato(
+  env: Env,
+  channel: string,
+  threadTs: string,
+  userMessage: string,
+  hubPlaceholder: PostedMessage,
+): Promise<void> {
+  const hubToken = BOT_CONFIGS.hub.getToken(env);
+
+  try {
+    await deleteSlackMessage(hubToken, hubPlaceholder.channel, hubPlaceholder.ts);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error(
+      "[delegateToMinato] failed to delete hub placeholder:",
+      detail,
+    );
+  }
+
+  // ハブとして引き継ぎ宣言
+  try {
+    await postSlackMessage(
+      hubToken,
+      channel,
+      "営業のご依頼ですね。担当の湊にお願いします。",
+      threadTs,
+    );
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[delegateToMinato] hub handover post failed:", detail);
+  }
+
+  // 湊が実作業
+  await executeMinatoTask(env, channel, threadTs, userMessage, true);
+
+  // ハブとして締めメッセージ
+  try {
+    await postSlackMessage(
+      hubToken,
+      channel,
+      "湊、ありがとう。他にもご依頼があればお声がけください。",
+      threadTs,
+    );
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[delegateToMinato] hub closing post failed:", detail);
+  }
+}
+
+// @minato への直接メンションを処理。ハブを経由しない単体フロー。
+async function handleMinatoMention(
+  env: Env,
+  event: SlackAppMentionEvent,
+): Promise<void> {
+  console.log("[handleMinatoMention] start", {
+    channel: event.channel,
+    user: event.user,
+    ts: event.ts,
+    thread_ts: event.thread_ts,
+  });
+  const replyTs = event.thread_ts ?? event.ts;
+  const userMessage = stripBotMention(event.text);
+  console.log("[handleMinatoMention] userMessage:", userMessage);
+
+  // 直接メンションは内容に関わらず sales-support として湊が応対する。
+  // 「承りました」プレースホルダーを置きつつ executeMinatoTask に処理を委ねる。
+  await executeMinatoTask(env, event.channel, replyTs, userMessage, true);
+  console.log("[handleMinatoMention] done");
+}
+
+// 湊専用 Slack イベント受信エンドポイント。
+// Slack App 側の Event Subscriptions URL に
+// https://<worker>/slack/minato/events を設定する想定。
+app.post("/slack/minato/events", async (c) => {
+  const rawBody = await c.req.text();
+
+  let payload: SlackPayload;
+  try {
+    payload = JSON.parse(rawBody) as SlackPayload;
+  } catch {
+    return c.text("invalid json", 400);
+  }
+
+  console.log("[/slack/minato/events] payload.type =", payload.type);
+
+  if (payload.type === "url_verification") {
+    return c.json({ challenge: payload.challenge });
+  }
+
+  const timestamp = c.req.header("x-slack-request-timestamp");
+  const signature = c.req.header("x-slack-signature");
+
+  if (!timestamp || !signature) {
+    console.error("[/slack/minato/events] missing slack headers");
+    return c.text("missing slack headers", 400);
+  }
+
+  const valid = await verifySlackSignature(
+    rawBody,
+    timestamp,
+    signature,
+    BOT_CONFIGS.minato.getSigningSecret(c.env),
+  );
+  if (!valid) {
+    console.error("[/slack/minato/events] signature INVALID");
+    return c.text("invalid signature", 401);
+  }
+
+  if (payload.type === "event_callback") {
+    const inner = (payload as SlackEventCallback).event;
+    if (inner.type === "app_mention") {
+      const event = inner as SlackAppMentionEvent;
+      c.executionCtx.waitUntil(handleMinatoMention(c.env, event));
+    }
+    return c.json({ ok: true });
+  }
+
+  return c.json({ ok: true });
+});
 
 export default app;

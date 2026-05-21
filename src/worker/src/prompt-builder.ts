@@ -144,6 +144,19 @@ export async function buildSystemPrompt(
       );
       break;
     }
+    case "sales-support": {
+      const [hub, agent, meetingSection] = await Promise.all([
+        fetchPrompt(HUB_PATH),
+        fetchPrompt("prompts/agent-minato.md"),
+        getMeetingSection(userMeetingNote, "対象議事録(参考文脈)"),
+      ]);
+      sections.push(
+        { title: "ハブプロンプト", content: hub },
+        { title: "営業担当エージェント(湊)", content: agent },
+        meetingSection,
+      );
+      break;
+    }
     case "general": {
       const [hub, agent] = await Promise.all([
         fetchPrompt(HUB_PATH),

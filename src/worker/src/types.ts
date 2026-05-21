@@ -3,6 +3,10 @@ export interface Env {
   SLACK_SIGNING_SECRET: string;
   ANTHROPIC_API_KEY: string;
   GOOGLE_SERVICE_ACCOUNT_JSON: string;
+  // 湊(営業担当)Bot 用シークレット。別 Slack App として登録され、
+  // chat.postMessage で投稿すると Slack 上では「湊」として表示される。
+  MINATO_BOT_TOKEN: string;
+  MINATO_SIGNING_SECRET: string;
 }
 
 export interface SlackUrlVerification {
