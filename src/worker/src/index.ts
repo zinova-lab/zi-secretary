@@ -35,7 +35,7 @@ import { createGoogleDoc } from "./google-docs";
 // マルチエージェント構成。各 Bot は独立した Slack App として登録され、
 // その Bot Token で chat.postMessage を呼ぶと Slack 上では各 Bot のアイデンティティ
 // (Bot 名 / アイコン)で投稿される。username / icon_emoji の上書きは使わない。
-type BotType = "hub" | "minato";
+type BotType = "hub" | "minato" | "nagi";
 
 interface BotConfig {
   displayName: string;
@@ -56,6 +56,12 @@ const BOT_CONFIGS: Record<BotType, BotConfig> = {
     iconEmoji: ":briefcase:",
     getToken: (env) => env.MINATO_BOT_TOKEN,
     getSigningSecret: (env) => env.MINATO_SIGNING_SECRET,
+  },
+  nagi: {
+    displayName: "凪",
+    iconEmoji: ":clipboard:",
+    getToken: (env) => env.NAGI_BOT_TOKEN,
+    getSigningSecret: (env) => env.NAGI_SIGNING_SECRET,
   },
 };
 
@@ -153,7 +159,7 @@ const WELCOME_BLOCKS: unknown[] = [
     type: "section",
     text: {
       type: "mrkdwn",
-      text: "議事録テキストを Slack に貼り付けた直後に呼び出します。\n\n*議事録要約*\n`@zi-secretary 議事録要約`\n\n*タスク抽出*\n`@zi-secretary タスク抽出`",
+      text: "議事録テキストを Slack に貼り付けた直後に呼び出します(凪が対応)。\n\n*議事録要約*\n`@zi-secretary 議事録要約`\n`@nagi 議事録要約`\n\n*タスク抽出*\n`@zi-secretary タスク抽出`\n`@nagi タスク抽出`\n\n*ToDo 整理*(議事録なしでも OK)\n`@zi-secretary ToDoリスト整理`\n`@nagi ToDo`",
     },
   },
   { type: "divider" },
@@ -201,7 +207,7 @@ const WELCOME_BLOCKS: unknown[] = [
     type: "section",
     text: {
       type: "mrkdwn",
-      text: "🌸 *華* - 全体統括 / 案内 / ヘルプ\n💼 *湊* - 営業担当(提案書・商談記録・営業ストーリー)\n📋 *凪* - 雑務担当(近日参加)\n🔔 *鈴* - 調査担当(近日参加)",
+      text: "🌸 *華* - 全体統括 / 案内 / 採用 / 記事 / メール / 雑談\n💼 *湊* - 営業担当(提案書・商談記録・営業ストーリー)\n📋 *凪* - 議事録整理担当(タスク抽出・要約・ToDo)\n🔔 *鈴* - 調査担当(近日参加)",
     },
   },
   {
@@ -264,9 +270,11 @@ function cleanBotText(text: string): string {
 }
 
 function needsMeetingContext(intent: Intent): boolean {
+  // ハブが自身で議事録コンテキストを system prompt に含めて Claude を呼ぶ
+  // 対象の intent のみ true。湊・凪に委譲する intent(sales-support /
+  // task-extract / meeting-summary / todo)は、委譲先の executeXxxTask 内で
+  // 自前で議事録を取得するため、ここでは false 扱いとする。
   return (
-    intent.type === "task-extract" ||
-    intent.type === "meeting-summary" ||
     intent.type === "job-post" ||
     intent.type === "pitch-deck" ||
     intent.type === "article-writer" ||
@@ -660,6 +668,28 @@ async function handleMention(
       return;
     }
 
+    if (
+      intent.type === "task-extract" ||
+      intent.type === "meeting-summary" ||
+      intent.type === "todo"
+    ) {
+      console.log(
+        `[handleMention] ${intent.type} intent, delegating to nagi`,
+      );
+      const userMessageForNagi = stripBotMention(event.text);
+      await delegateToNagi(
+        env,
+        placeholder.channel,
+        replyTs,
+        userMessageForNagi,
+        placeholder,
+        intent,
+      );
+      cleanedUp = true;
+      console.log("[handleMention] done (delegated to nagi)");
+      return;
+    }
+
     console.log("[handleMention] building system prompt...");
     let systemPrompt = await buildSystemPrompt(intent, userMeetingNote);
     if (multiUser) {
@@ -1031,6 +1061,258 @@ app.post("/slack/minato/events", async (c) => {
     if (inner.type === "app_mention") {
       const event = inner as SlackAppMentionEvent;
       c.executionCtx.waitUntil(handleMinatoMention(c.env, event));
+    }
+    return c.json({ ok: true });
+  }
+
+  return c.json({ ok: true });
+});
+
+// ────────────────────────────────────────────────────────────
+// 凪(議事録整理・タスク管理担当 Bot)関連
+// ────────────────────────────────────────────────────────────
+
+// 凪として実際の作業を行うコア関数。湊と同じ構造。
+// forcedIntent が渡されればそれを使う(ハブからの委譲時)。なければ
+// 入力から detectIntent し、凪の領域外(task-extract/meeting-summary/todo
+// 以外)なら todo にフォールバック(直接 @nagi メンション時の安全策)。
+//
+// 議事録は requiresMeetingContext(task-extract / meeting-summary)なら必須、
+// それ以外は wantsMeetingContext で opt-in 判定。
+async function executeNagiTask(
+  env: Env,
+  channel: string,
+  threadTs: string,
+  userMessage: string,
+  postAnnouncement: boolean,
+  forcedIntent?: Intent,
+): Promise<void> {
+  const nagiToken = BOT_CONFIGS.nagi.getToken(env);
+
+  if (postAnnouncement) {
+    try {
+      await postSlackMessage(
+        nagiToken,
+        channel,
+        "凪です。承りました、整理します…",
+        threadTs,
+      );
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error("[executeNagiTask] announcement post failed:", detail);
+    }
+  }
+
+  try {
+    let intent: Intent;
+    if (forcedIntent) {
+      intent = forcedIntent;
+    } else {
+      const baseIntent = detectIntent(userMessage);
+      if (
+        baseIntent.type === "task-extract" ||
+        baseIntent.type === "meeting-summary" ||
+        baseIntent.type === "todo"
+      ) {
+        intent = baseIntent;
+      } else {
+        // 凪の領域外の依頼(挨拶含む)。todo を catch-all として使う:
+        // 議事録 fetch は走らず、agent-nagi.md のペルソナで応答する。
+        // 必要に応じてプロンプト側で他 Bot に誘導する。
+        intent = { ...baseIntent, type: "todo" };
+      }
+    }
+    console.log("[executeNagiTask] intent:", intent);
+
+    let userMeetingNote: string | undefined;
+    const forceUse = requiresMeetingContext(intent);
+    const userOptIn = wantsMeetingContext(userMessage);
+    if (forceUse || userOptIn) {
+      console.log(
+        "[executeNagiTask] fetching channel history (forceUse:",
+        forceUse,
+        "userOptIn:",
+        userOptIn,
+        ")",
+      );
+      userMeetingNote = await findMeetingNoteInHistory(
+        nagiToken,
+        channel,
+        threadTs,
+      );
+    }
+
+    const systemPrompt = await buildSystemPrompt(intent, userMeetingNote);
+    console.log("[executeNagiTask] system prompt length:", systemPrompt.length);
+
+    const reply = await askClaudeConversation(env.ANTHROPIC_API_KEY, systemPrompt, [
+      { role: "user", content: userMessage },
+    ]);
+    console.log("[executeNagiTask] reply length:", reply.length);
+
+    const useDocs = wantsGoogleDoc(userMessage);
+    let postParts: string[];
+    if (useDocs) {
+      console.log("[executeNagiTask] google doc requested");
+      try {
+        const title = buildDocTitle(intent);
+        const docUrl = await createGoogleDoc(
+          env.GOOGLE_SERVICE_ACCOUNT_JSON,
+          title,
+          reply,
+        );
+        console.log("[executeNagiTask] google doc created:", docUrl);
+        postParts = [
+          `:page_facing_up: ${intentLabel(intent.type)}をGoogle ドキュメントで作成しました\n${docUrl}`,
+        ];
+      } catch (docErr) {
+        const detail =
+          docErr instanceof Error ? docErr.message : String(docErr);
+        console.error("[executeNagiTask] google doc failed:", detail);
+        postParts = [
+          ":warning: Google ドキュメントの作成に失敗しました。本文を以下に投稿します。",
+          ...splitForSlack(reply),
+        ];
+      }
+    } else {
+      postParts = splitForSlack(reply);
+    }
+
+    for (const part of postParts) {
+      await postSlackMessage(nagiToken, channel, part, threadTs);
+    }
+  } catch (err) {
+    const detail =
+      err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    console.error("[executeNagiTask] error:", detail);
+    try {
+      await postSlackMessage(
+        nagiToken,
+        channel,
+        `:warning: 凪が応答できませんでした。少し時間を置いて再度お試しください。`,
+        threadTs,
+      );
+    } catch (cleanupErr) {
+      const cleanupDetail =
+        cleanupErr instanceof Error
+          ? cleanupErr.message
+          : String(cleanupErr);
+      console.error("[executeNagiTask] cleanup failed:", cleanupDetail);
+    }
+  }
+}
+
+// ハブから凪への委譲。湊と同じパターン。
+async function delegateToNagi(
+  env: Env,
+  channel: string,
+  threadTs: string,
+  userMessage: string,
+  hubPlaceholder: PostedMessage,
+  intent: Intent,
+): Promise<void> {
+  const hubToken = BOT_CONFIGS.hub.getToken(env);
+
+  try {
+    await deleteSlackMessage(hubToken, hubPlaceholder.channel, hubPlaceholder.ts);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error(
+      "[delegateToNagi] failed to delete hub placeholder:",
+      detail,
+    );
+  }
+
+  try {
+    await postSlackMessage(
+      hubToken,
+      channel,
+      "整理のご依頼ですね。凪にお願いします。",
+      threadTs,
+    );
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[delegateToNagi] hub handover post failed:", detail);
+  }
+
+  await executeNagiTask(env, channel, threadTs, userMessage, true, intent);
+
+  try {
+    await postSlackMessage(
+      hubToken,
+      channel,
+      "凪、ありがとう。他にもご依頼があればお声がけください。",
+      threadTs,
+    );
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[delegateToNagi] hub closing post failed:", detail);
+  }
+}
+
+// @nagi への直接メンション処理。湊と同じく executeNagiTask に委ねる
+// (forcedIntent なしで呼ぶことで、入力からの intent 判定 + todo フォールバックが効く)。
+async function handleNagiMention(
+  env: Env,
+  event: SlackAppMentionEvent,
+): Promise<void> {
+  console.log("[handleNagiMention] start", {
+    channel: event.channel,
+    user: event.user,
+    ts: event.ts,
+    thread_ts: event.thread_ts,
+  });
+  const replyTs = event.thread_ts ?? event.ts;
+  const userMessage = stripBotMention(event.text);
+  console.log("[handleNagiMention] userMessage:", userMessage);
+
+  await executeNagiTask(env, event.channel, replyTs, userMessage, true);
+  console.log("[handleNagiMention] done");
+}
+
+// 凪専用 Slack イベント受信エンドポイント。
+// Slack App 側の Event Subscriptions URL に
+// https://<worker>/slack/nagi/events を設定する想定。
+app.post("/slack/nagi/events", async (c) => {
+  const rawBody = await c.req.text();
+
+  let payload: SlackPayload;
+  try {
+    payload = JSON.parse(rawBody) as SlackPayload;
+  } catch {
+    return c.text("invalid json", 400);
+  }
+
+  console.log("[/slack/nagi/events] payload.type =", payload.type);
+
+  if (payload.type === "url_verification") {
+    return c.json({ challenge: payload.challenge });
+  }
+
+  const timestamp = c.req.header("x-slack-request-timestamp");
+  const signature = c.req.header("x-slack-signature");
+
+  if (!timestamp || !signature) {
+    console.error("[/slack/nagi/events] missing slack headers");
+    return c.text("missing slack headers", 400);
+  }
+
+  const valid = await verifySlackSignature(
+    rawBody,
+    timestamp,
+    signature,
+    BOT_CONFIGS.nagi.getSigningSecret(c.env),
+  );
+  if (!valid) {
+    console.error("[/slack/nagi/events] signature INVALID");
+    return c.text("invalid signature", 401);
+  }
+
+  if (payload.type === "event_callback") {
+    const inner = (payload as SlackEventCallback).event;
+    if (inner.type === "app_mention") {
+      const event = inner as SlackAppMentionEvent;
+      c.executionCtx.waitUntil(handleNagiMention(c.env, event));
     }
     return c.json({ ok: true });
   }

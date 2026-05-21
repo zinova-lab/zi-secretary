@@ -7,6 +7,10 @@ export interface Env {
   // chat.postMessage で投稿すると Slack 上では「湊」として表示される。
   MINATO_BOT_TOKEN: string;
   MINATO_SIGNING_SECRET: string;
+  // 凪(議事録整理・タスク管理担当)Bot 用シークレット。
+  // 湊と同様、別 Slack App として登録された独立 Bot。
+  NAGI_BOT_TOKEN: string;
+  NAGI_SIGNING_SECRET: string;
 }
 
 export interface SlackUrlVerification {

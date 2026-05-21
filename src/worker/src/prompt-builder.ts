@@ -59,17 +59,39 @@ export async function buildSystemPrompt(
   const sections: PromptSection[] = [];
 
   switch (intent.type) {
-    case "task-extract": {
+    case "task-extract":
+    case "meeting-summary": {
+      // task-extract / meeting-summary は凪が担当。サブタイプ判定は
+      // agent-nagi.md 内で行うので、ここでは同じプロンプト構成になる。
       const [hub, agent, meetingSection] = await Promise.all([
         fetchPrompt(HUB_PATH),
-        fetchPrompt("prompts/agent-task-extract.md"),
+        fetchPrompt("prompts/agent-nagi.md"),
         getMeetingSection(userMeetingNote, "対象議事録"),
       ]);
       sections.push(
         { title: "ハブプロンプト", content: hub },
-        { title: "タスク抽出エージェント", content: agent },
+        { title: "議事録整理担当エージェント(凪)", content: agent },
         meetingSection,
       );
+      break;
+    }
+    case "todo": {
+      // ToDo 整理は議事録 opt-in。サンプル議事録 fallback は使わない
+      // (無関係な議事録ノイズが ToDo 出力に混ざるのを避けるため)。
+      const [hub, agent] = await Promise.all([
+        fetchPrompt(HUB_PATH),
+        fetchPrompt("prompts/agent-nagi.md"),
+      ]);
+      sections.push(
+        { title: "ハブプロンプト", content: hub },
+        { title: "議事録整理担当エージェント(凪)", content: agent },
+      );
+      if (userMeetingNote) {
+        sections.push({
+          title: "参照議事録(ユーザー投稿)",
+          content: userMeetingNote,
+        });
+      }
       break;
     }
     case "job-post": {
@@ -101,19 +123,6 @@ export async function buildSystemPrompt(
         { title: "ハブプロンプト", content: hub },
         { title: "採用資料エージェント", content: agent },
         { title: "顧客情報", content: client },
-        meetingSection,
-      );
-      break;
-    }
-    case "meeting-summary": {
-      const [hub, agent, meetingSection] = await Promise.all([
-        fetchPrompt(HUB_PATH),
-        fetchPrompt("prompts/agent-meeting-summary.md"),
-        getMeetingSection(userMeetingNote, "対象議事録"),
-      ]);
-      sections.push(
-        { title: "ハブプロンプト", content: hub },
-        { title: "議事録要約エージェント", content: agent },
         meetingSection,
       );
       break;

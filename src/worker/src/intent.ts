@@ -7,6 +7,7 @@ export type IntentType =
   | "article-writer"
   | "email-writer"
   | "sales-support"
+  | "todo"
   | "general";
 
 export type Media = "indeed" | "mynavi" | "rikunavi-next";
@@ -51,6 +52,17 @@ const SALES_SUPPORT_KEYWORDS = [
   "ネクストアクション",
   "企業情報整理",
   "営業ストーリー",
+];
+// ToDo 系の軽量整理依頼。task-extract / meeting-summary より後で評価し、
+// 「議事録 + タスク」のような従来パターンは task-extract に流れるようにする。
+const TODO_KEYWORDS = [
+  "todoリスト",
+  "todo リスト",
+  "todo整理",
+  "todo 整理",
+  "やることリスト",
+  "やること整理",
+  "やること",
 ];
 const HELP_KEYWORDS = [
   "ヘルプ",
@@ -122,7 +134,8 @@ export function detectIntent(text: string): Intent {
       containsAny(lowered, TASK_EXTRACT_KEYWORDS) ||
       containsAny(lowered, ARTICLE_WRITER_KEYWORDS) ||
       containsAny(lowered, EMAIL_WRITER_KEYWORDS) ||
-      containsAny(lowered, SALES_SUPPORT_KEYWORDS);
+      containsAny(lowered, SALES_SUPPORT_KEYWORDS) ||
+      containsAny(lowered, TODO_KEYWORDS);
     if (!otherAgent) {
       return { type: "help" };
     }
@@ -150,6 +163,9 @@ export function detectIntent(text: string): Intent {
   }
   if (containsAny(lowered, SALES_SUPPORT_KEYWORDS)) {
     return { type: "sales-support", company };
+  }
+  if (containsAny(lowered, TODO_KEYWORDS)) {
+    return { type: "todo", company };
   }
   return { type: "general" };
 }
@@ -232,6 +248,15 @@ export function hasExplicitAgentKeyword(text: string): IntentType | null {
   ) {
     return "sales-support";
   }
+  if (
+    text.includes("ToDoリスト") ||
+    text.includes("todo リスト") ||
+    text.includes("ToDo整理") ||
+    text.includes("やることリスト") ||
+    text.includes("やること整理")
+  ) {
+    return "todo";
+  }
   return null;
 }
 
@@ -240,19 +265,21 @@ export function intentLabel(type: IntentType): string {
     case "help":
       return "ヘルプ";
     case "task-extract":
-      return "タスク抽出";
+      return "タスク抽出(凪)";
     case "job-post":
       return "求人原稿作成";
     case "pitch-deck":
       return "採用ピッチ資料作成";
     case "meeting-summary":
-      return "議事録要約";
+      return "議事録要約(凪)";
     case "article-writer":
       return "記事執筆";
     case "email-writer":
       return "メール文面作成";
     case "sales-support":
       return "営業サポート(湊)";
+    case "todo":
+      return "ToDo整理(凪)";
     case "general":
       return "一般応答";
   }
