@@ -802,6 +802,10 @@ async function handleMention(
 // 湊として実際の作業を行うコア関数。ハブからの委譲・直接メンションの両方から
 // 呼ばれる。intent は sales-support に固定し、議事録は opt-in のみ、docs 納品
 // 分岐は既存ロジックを再利用する。
+//
+// 「承りました」は **独立した新規投稿** として送信する(placeholder ではない)。
+// 本文も postMultipartReply で placeholder を「更新」するのではなく、新規投稿
+// として追加する。これによりスレッドに 4 投稿のワークフローが可視化される。
 async function executeMinatoTask(
   env: Env,
   channel: string,
@@ -810,11 +814,10 @@ async function executeMinatoTask(
   postAnnouncement: boolean,
 ): Promise<void> {
   const minatoToken = BOT_CONFIGS.minato.getToken(env);
-  let placeholder: PostedMessage | null = null;
 
   if (postAnnouncement) {
     try {
-      placeholder = await postSlackMessage(
+      await postSlackMessage(
         minatoToken,
         channel,
         "湊です。承りました、作成中です…",
@@ -888,18 +891,9 @@ async function executeMinatoTask(
       postParts = splitForSlack(reply);
     }
 
-    if (placeholder) {
-      await postMultipartReply(
-        minatoToken,
-        placeholder.channel,
-        threadTs,
-        placeholder.ts,
-        postParts,
-      );
-    } else {
-      for (const part of postParts) {
-        await postSlackMessage(minatoToken, channel, part, threadTs);
-      }
+    // 本文は新規投稿として追加(承りましたメッセージは残したまま)
+    for (const part of postParts) {
+      await postSlackMessage(minatoToken, channel, part, threadTs);
     }
   } catch (err) {
     const detail =
@@ -912,9 +906,6 @@ async function executeMinatoTask(
         `:warning: 湊が応答できませんでした。少し時間を置いて再度お試しください。`,
         threadTs,
       );
-      if (placeholder) {
-        await deleteSlackMessage(minatoToken, placeholder.channel, placeholder.ts);
-      }
     } catch (cleanupErr) {
       const cleanupDetail =
         cleanupErr instanceof Error
