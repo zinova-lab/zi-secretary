@@ -62,7 +62,7 @@ const WELCOME_BLOCKS: unknown[] = [
     type: "section",
     text: {
       type: "mrkdwn",
-      text: "Zinova Creation の業務を支援する AI 秘書です。\n採用 / マーケ / 営業 / 議事録活用を、一言の指示でサポートします。",
+      text: "業務を支援する AI 秘書です。\n採用 / マーケ / 営業 / 議事録活用を、一言の指示でサポートします。",
     },
   },
   { type: "divider" },
@@ -174,7 +174,7 @@ const WELCOME_BLOCKS: unknown[] = [
 
 const HELP_MESSAGE = `:wave: *華 - AI秘書Bot* の使い方
 
-私は ZiC の業務を支援する AI 秘書です。以下の機能があります。
+業務を支援する AI 秘書です。以下の機能があります。
 
 *■ 議事録から作る*
 • タスク抽出 — \`@zi-secretary タスク抽出\`

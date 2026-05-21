@@ -1,8 +1,8 @@
 // サービスアカウントは Drive ストレージを持たないため、Workspace の共有ドライブ
-// (Shared Drive)配下に作成する。共有ドライブ「ZiC ドキュメント」(info@zinovacreation.com
-// の Workspace 配下)に hana-docs サービスアカウントを「コンテンツ管理者」として
-// 招待済み。parents に共有ドライブ自体の ID を指定すると、共有ドライブのルートに
-// ファイルが作成され、ストレージは共有ドライブ所有になる。
+// (Shared Drive)配下に作成する。対象の共有ドライブにサービスアカウントを
+// 「コンテンツ管理者」として招待しておく前提。parents に共有ドライブ自体の
+// ID を指定すると、共有ドライブのルートにファイルが作成され、ストレージは
+// 共有ドライブ所有になる。
 // 共有ドライブ ID は "0A" で始まる短い形式(個別フォルダ ID とは異なる)。
 // 共有ドライブ API 呼び出しには supportsAllDrives=true が必須。
 const SHARED_FOLDER_ID = "0AAiu8QWBfZcFUk9PVA";
@@ -325,7 +325,7 @@ export async function createGoogleDoc(
   }
 
   // 共有設定(anyone:reader)はスキップ。
-  // 理由:共有ドライブ「ZiC ドキュメント」のメンバーは共有設定なしでも閲覧可能。
+  // 理由:共有ドライブのメンバーは共有設定なしでも閲覧可能。
   // makeAnyoneReader を呼ぶと処理時間が +2-3 秒、Claude 応答+Docs 書き込みと
   // 合算で waitUntil grace を超え、Slack 完了通知が間に合わない事象が発生した。
   // 外部共有が必要な場合は受け手側で Docs を開いて手動で「リンクを知っている
