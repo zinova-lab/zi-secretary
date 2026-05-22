@@ -19,7 +19,11 @@ import {
   type PostedMessage,
   type SlackThreadMessage,
 } from "./slack";
-import { askClaudeConversation, type ConversationMessage } from "./anthropic";
+import {
+  askClaudeConversation,
+  type ClaudeTool,
+  type ConversationMessage,
+} from "./anthropic";
 import {
   detectIntent,
   hasExplicitAgentKeyword,
@@ -35,7 +39,7 @@ import { createGoogleDoc } from "./google-docs";
 // マルチエージェント構成。各 Bot は独立した Slack App として登録され、
 // その Bot Token で chat.postMessage を呼ぶと Slack 上では各 Bot のアイデンティティ
 // (Bot 名 / アイコン)で投稿される。username / icon_emoji の上書きは使わない。
-type BotType = "hub" | "minato" | "nagi";
+type BotType = "hub" | "minato" | "nagi" | "suzu";
 
 interface BotConfig {
   displayName: string;
@@ -62,6 +66,12 @@ const BOT_CONFIGS: Record<BotType, BotConfig> = {
     iconEmoji: ":clipboard:",
     getToken: (env) => env.NAGI_BOT_TOKEN,
     getSigningSecret: (env) => env.NAGI_SIGNING_SECRET,
+  },
+  suzu: {
+    displayName: "鈴",
+    iconEmoji: ":bell:",
+    getToken: (env) => env.SUZU_BOT_TOKEN,
+    getSigningSecret: (env) => env.SUZU_SIGNING_SECRET,
   },
 };
 
@@ -167,6 +177,22 @@ const WELCOME_BLOCKS: unknown[] = [
     type: "header",
     text: {
       type: "plain_text",
+      text: "🔔 情報調査",
+      emoji: true,
+    },
+  },
+  {
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "Web を検索して構造化情報を返します(鈴が対応)。\n企業情報 / 業界動向 / 競合調査 / 人物 / 商品・サービス\n`@zi-secretary 〇〇株式会社について調べて`\n`@zi-secretary AI業界の最新動向を調査`\n`@suzu 〇〇というツールについて教えて`",
+    },
+  },
+  { type: "divider" },
+  {
+    type: "header",
+    text: {
+      type: "plain_text",
       text: "✨ 便利な使い方",
       emoji: true,
     },
@@ -207,7 +233,7 @@ const WELCOME_BLOCKS: unknown[] = [
     type: "section",
     text: {
       type: "mrkdwn",
-      text: "🌸 *華* - 全体統括 / 案内 / 採用 / 記事 / メール / 雑談\n💼 *湊* - 営業担当(提案書・商談記録・営業ストーリー)\n📋 *凪* - 議事録整理担当(タスク抽出・要約・ToDo)\n🔔 *鈴* - 調査担当(近日参加)",
+      text: "🌸 *華* - 全体統括 / 案内 / 採用 / 記事 / メール / 雑談\n💼 *湊* - 営業担当(提案書・商談記録・営業ストーリー)\n📋 *凪* - 議事録整理担当(タスク抽出・要約・ToDo)\n🔔 *鈴* - 情報調査担当(企業情報・市場リサーチ・競合調査)",
     },
   },
   {
@@ -687,6 +713,22 @@ async function handleMention(
       );
       cleanedUp = true;
       console.log("[handleMention] done (delegated to nagi)");
+      return;
+    }
+
+    if (intent.type === "research") {
+      console.log("[handleMention] research intent, delegating to suzu");
+      const userMessageForSuzu = stripBotMention(event.text);
+      await delegateToSuzu(
+        env,
+        placeholder.channel,
+        replyTs,
+        userMessageForSuzu,
+        placeholder,
+        intent,
+      );
+      cleanedUp = true;
+      console.log("[handleMention] done (delegated to suzu)");
       return;
     }
 
@@ -1313,6 +1355,250 @@ app.post("/slack/nagi/events", async (c) => {
     if (inner.type === "app_mention") {
       const event = inner as SlackAppMentionEvent;
       c.executionCtx.waitUntil(handleNagiMention(c.env, event));
+    }
+    return c.json({ ok: true });
+  }
+
+  return c.json({ ok: true });
+});
+
+// ────────────────────────────────────────────────────────────
+// 鈴(情報調査担当 Bot)関連
+// ────────────────────────────────────────────────────────────
+
+// Claude API の web_search ツール定義。鈴の Claude 呼び出し時にのみ渡す。
+// 他 Bot は tools なし。
+const SUZU_TOOLS: ClaudeTool[] = [
+  { type: "web_search_20250305", name: "web_search" },
+];
+
+// 鈴として実際の作業を行うコア関数。湊・凪と同じ構造、追加で web_search
+// ツールを Claude API に渡す。
+async function executeSuzuTask(
+  env: Env,
+  channel: string,
+  threadTs: string,
+  userMessage: string,
+  postAnnouncement: boolean,
+  forcedIntent?: Intent,
+): Promise<void> {
+  const suzuToken = BOT_CONFIGS.suzu.getToken(env);
+
+  if (postAnnouncement) {
+    try {
+      await postSlackMessage(
+        suzuToken,
+        channel,
+        "鈴です。承りました、調査します…",
+        threadTs,
+      );
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error("[executeSuzuTask] announcement post failed:", detail);
+    }
+  }
+
+  try {
+    let intent: Intent;
+    if (forcedIntent) {
+      intent = forcedIntent;
+    } else {
+      const baseIntent = detectIntent(userMessage);
+      if (baseIntent.type === "research") {
+        intent = baseIntent;
+      } else {
+        // 鈴の領域外フォールバック。research にクランプして
+        // agent-suzu.md のペルソナ(専門外は他 Bot に誘導)で応答させる。
+        intent = { ...baseIntent, type: "research" };
+      }
+    }
+    console.log("[executeSuzuTask] intent:", intent);
+
+    // 鈴は外部 Web で情報を取るため議事録は原則不要。
+    // ユーザーが明示的に opt-in した時のみコンテキストに追加。
+    let userMeetingNote: string | undefined;
+    if (wantsMeetingContext(userMessage)) {
+      console.log("[executeSuzuTask] meeting context requested (opt-in)");
+      userMeetingNote = await findMeetingNoteInHistory(
+        suzuToken,
+        channel,
+        threadTs,
+      );
+    }
+
+    const systemPrompt = await buildSystemPrompt(intent, userMeetingNote);
+    console.log("[executeSuzuTask] system prompt length:", systemPrompt.length);
+
+    // ⭐ web_search ツールを Claude API に渡す。これにより必要に応じて
+    // 検索が自動実行され、結果を踏まえた応答が返る。
+    const reply = await askClaudeConversation(
+      env.ANTHROPIC_API_KEY,
+      systemPrompt,
+      [{ role: "user", content: userMessage }],
+      SUZU_TOOLS,
+    );
+    console.log("[executeSuzuTask] reply length:", reply.length);
+
+    const useDocs = wantsGoogleDoc(userMessage);
+    let postParts: string[];
+    if (useDocs) {
+      console.log("[executeSuzuTask] google doc requested");
+      try {
+        const title = buildDocTitle(intent);
+        const docUrl = await createGoogleDoc(
+          env.GOOGLE_SERVICE_ACCOUNT_JSON,
+          title,
+          reply,
+        );
+        console.log("[executeSuzuTask] google doc created:", docUrl);
+        postParts = [
+          `:page_facing_up: ${intentLabel(intent.type)}をGoogle ドキュメントで作成しました\n${docUrl}`,
+        ];
+      } catch (docErr) {
+        const detail =
+          docErr instanceof Error ? docErr.message : String(docErr);
+        console.error("[executeSuzuTask] google doc failed:", detail);
+        postParts = [
+          ":warning: Google ドキュメントの作成に失敗しました。本文を以下に投稿します。",
+          ...splitForSlack(reply),
+        ];
+      }
+    } else {
+      postParts = splitForSlack(reply);
+    }
+
+    for (const part of postParts) {
+      await postSlackMessage(suzuToken, channel, part, threadTs);
+    }
+  } catch (err) {
+    const detail =
+      err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    console.error("[executeSuzuTask] error:", detail);
+    try {
+      await postSlackMessage(
+        suzuToken,
+        channel,
+        `:warning: 鈴が応答できませんでした。少し時間を置いて再度お試しください。`,
+        threadTs,
+      );
+    } catch (cleanupErr) {
+      const cleanupDetail =
+        cleanupErr instanceof Error
+          ? cleanupErr.message
+          : String(cleanupErr);
+      console.error("[executeSuzuTask] cleanup failed:", cleanupDetail);
+    }
+  }
+}
+
+async function delegateToSuzu(
+  env: Env,
+  channel: string,
+  threadTs: string,
+  userMessage: string,
+  hubPlaceholder: PostedMessage,
+  intent: Intent,
+): Promise<void> {
+  const hubToken = BOT_CONFIGS.hub.getToken(env);
+
+  try {
+    await deleteSlackMessage(hubToken, hubPlaceholder.channel, hubPlaceholder.ts);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error(
+      "[delegateToSuzu] failed to delete hub placeholder:",
+      detail,
+    );
+  }
+
+  try {
+    await postSlackMessage(
+      hubToken,
+      channel,
+      "調査のご依頼ですね。鈴にお願いします。",
+      threadTs,
+    );
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[delegateToSuzu] hub handover post failed:", detail);
+  }
+
+  await executeSuzuTask(env, channel, threadTs, userMessage, true, intent);
+
+  try {
+    await postSlackMessage(
+      hubToken,
+      channel,
+      "鈴、ありがとう。他にもご依頼があればお声がけください。",
+      threadTs,
+    );
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[delegateToSuzu] hub closing post failed:", detail);
+  }
+}
+
+async function handleSuzuMention(
+  env: Env,
+  event: SlackAppMentionEvent,
+): Promise<void> {
+  console.log("[handleSuzuMention] start", {
+    channel: event.channel,
+    user: event.user,
+    ts: event.ts,
+    thread_ts: event.thread_ts,
+  });
+  const replyTs = event.thread_ts ?? event.ts;
+  const userMessage = stripBotMention(event.text);
+  console.log("[handleSuzuMention] userMessage:", userMessage);
+
+  await executeSuzuTask(env, event.channel, replyTs, userMessage, true);
+  console.log("[handleSuzuMention] done");
+}
+
+// 鈴専用 Slack イベント受信エンドポイント。
+// Slack App 側の Event Subscriptions URL に
+// https://<worker>/slack/suzu/events を設定する想定。
+app.post("/slack/suzu/events", async (c) => {
+  const rawBody = await c.req.text();
+
+  let payload: SlackPayload;
+  try {
+    payload = JSON.parse(rawBody) as SlackPayload;
+  } catch {
+    return c.text("invalid json", 400);
+  }
+
+  console.log("[/slack/suzu/events] payload.type =", payload.type);
+
+  if (payload.type === "url_verification") {
+    return c.json({ challenge: payload.challenge });
+  }
+
+  const timestamp = c.req.header("x-slack-request-timestamp");
+  const signature = c.req.header("x-slack-signature");
+
+  if (!timestamp || !signature) {
+    console.error("[/slack/suzu/events] missing slack headers");
+    return c.text("missing slack headers", 400);
+  }
+
+  const valid = await verifySlackSignature(
+    rawBody,
+    timestamp,
+    signature,
+    BOT_CONFIGS.suzu.getSigningSecret(c.env),
+  );
+  if (!valid) {
+    console.error("[/slack/suzu/events] signature INVALID");
+    return c.text("invalid signature", 401);
+  }
+
+  if (payload.type === "event_callback") {
+    const inner = (payload as SlackEventCallback).event;
+    if (inner.type === "app_mention") {
+      const event = inner as SlackAppMentionEvent;
+      c.executionCtx.waitUntil(handleSuzuMention(c.env, event));
     }
     return c.json({ ok: true });
   }

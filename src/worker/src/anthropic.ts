@@ -49,6 +49,18 @@ export interface ConversationMessage {
   content: string;
 }
 
+// Claude API のサーバーサイドツール定義(web_search 等)。
+// SDK バージョン差異を避けるため構造型で受け、API には as-is で渡す。
+export interface ClaudeTool {
+  type: string;
+  name: string;
+  [key: string]: unknown;
+}
+
+// tools(web_search 等)使用時は Claude が複数回検索を実行するため
+// 通常より時間がかかる。45 秒では足りないケースがあるので 90 秒に拡張。
+const CLAUDE_TIMEOUT_MS_WITH_TOOLS = 90_000;
+
 function isRetryableError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const message = err.message.toLowerCase();
@@ -69,8 +81,13 @@ export async function askClaudeConversation(
   apiKey: string,
   systemPrompt: string,
   messages: ConversationMessage[],
+  tools?: ClaudeTool[],
 ): Promise<string> {
   const client = new Anthropic({ apiKey });
+  const hasTools = Boolean(tools && tools.length > 0);
+  const effectiveTimeoutMs = hasTools
+    ? CLAUDE_TIMEOUT_MS_WITH_TOOLS
+    : CLAUDE_TIMEOUT_MS;
   let lastError: unknown;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -84,25 +101,42 @@ export async function askClaudeConversation(
 
     const startMs = Date.now();
     try {
-      const apiPromise = client.messages.create({
+      // tools パラメータは SDK バージョン差異を避けるため動的に追加し、
+      // ClaudeTool 構造型から SDK の Tool 型へは unknown 経由でキャスト。
+      // server tools(web_search)も同じ shape で受け付けられる。
+      const baseParams = {
         model: MODEL,
         max_tokens: MAX_TOKENS,
         system: systemPrompt,
         messages,
-      });
+      };
+      const createParams = hasTools
+        ? ({ ...baseParams, tools } as unknown as Parameters<
+            typeof client.messages.create
+          >[0])
+        : baseParams;
+      const apiPromise = client.messages.create(createParams);
 
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(
-          () => reject(new Error(`Claude API timeout (${CLAUDE_TIMEOUT_MS / 1000}s)`)),
-          CLAUDE_TIMEOUT_MS,
+          () =>
+            reject(
+              new Error(
+                `Claude API timeout (${effectiveTimeoutMs / 1000}s)`,
+              ),
+            ),
+          effectiveTimeoutMs,
         );
       });
 
-      const response = await Promise.race([apiPromise, timeoutPromise]);
+      const response = (await Promise.race([
+        apiPromise,
+        timeoutPromise,
+      ])) as Anthropic.Message;
 
       const elapsedMs = Date.now() - startMs;
       console.log(
-        `[askClaudeConversation] attempt ${attempt + 1} succeeded in ${elapsedMs}ms`,
+        `[askClaudeConversation] attempt ${attempt + 1} succeeded in ${elapsedMs}ms (tools: ${hasTools})`,
       );
 
       return response.content

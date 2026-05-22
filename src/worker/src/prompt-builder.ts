@@ -166,6 +166,26 @@ export async function buildSystemPrompt(
       );
       break;
     }
+    case "research": {
+      // 鈴は Web 検索で外部情報を取得するため議事録は原則不要。
+      // ユーザーが実際に議事録を貼った場合のみ参考文脈として添える
+      // (todo / general と同じパターン、サンプル fallback なし)。
+      const [hub, agent] = await Promise.all([
+        fetchPrompt(HUB_PATH),
+        fetchPrompt("prompts/agent-suzu.md"),
+      ]);
+      sections.push(
+        { title: "ハブプロンプト", content: hub },
+        { title: "情報調査担当エージェント(鈴)", content: agent },
+      );
+      if (userMeetingNote) {
+        sections.push({
+          title: "参照議事録(ユーザー投稿)",
+          content: userMeetingNote,
+        });
+      }
+      break;
+    }
     case "general": {
       const [hub, agent] = await Promise.all([
         fetchPrompt(HUB_PATH),

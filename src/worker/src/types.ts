@@ -11,6 +11,10 @@ export interface Env {
   // 湊と同様、別 Slack App として登録された独立 Bot。
   NAGI_BOT_TOKEN: string;
   NAGI_SIGNING_SECRET: string;
+  // 鈴(情報調査・市場リサーチ担当)Bot 用シークレット。
+  // 別 Slack App。web_search ツール経由で Web 上の情報を集める役割。
+  SUZU_BOT_TOKEN: string;
+  SUZU_SIGNING_SECRET: string;
 }
 
 export interface SlackUrlVerification {

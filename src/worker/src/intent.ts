@@ -8,6 +8,7 @@ export type IntentType =
   | "email-writer"
   | "sales-support"
   | "todo"
+  | "research"
   | "general";
 
 export type Media = "indeed" | "mynavi" | "rikunavi-next";
@@ -63,6 +64,23 @@ const TODO_KEYWORDS = [
   "やることリスト",
   "やること整理",
   "やること",
+];
+// 鈴(情報調査)用キーワード。sales-support の後に評価することで
+// 「企業情報整理」(湊)と「企業情報を調べて」(鈴)を衝突なく分離できる。
+// 「企業情報整理」は SALES_SUPPORT 側の完全一致が先に match する。
+const RESEARCH_KEYWORDS = [
+  "調べて",
+  "調査",
+  "リサーチ",
+  "情報収集",
+  "業界動向",
+  "市場調査",
+  "企業情報",
+  "競合調査",
+  "プロフィール",
+  "について調べ",
+  "について教え",
+  "とは何",
 ];
 const HELP_KEYWORDS = [
   "ヘルプ",
@@ -135,7 +153,8 @@ export function detectIntent(text: string): Intent {
       containsAny(lowered, ARTICLE_WRITER_KEYWORDS) ||
       containsAny(lowered, EMAIL_WRITER_KEYWORDS) ||
       containsAny(lowered, SALES_SUPPORT_KEYWORDS) ||
-      containsAny(lowered, TODO_KEYWORDS);
+      containsAny(lowered, TODO_KEYWORDS) ||
+      containsAny(lowered, RESEARCH_KEYWORDS);
     if (!otherAgent) {
       return { type: "help" };
     }
@@ -166,6 +185,9 @@ export function detectIntent(text: string): Intent {
   }
   if (containsAny(lowered, TODO_KEYWORDS)) {
     return { type: "todo", company };
+  }
+  if (containsAny(lowered, RESEARCH_KEYWORDS)) {
+    return { type: "research", company };
   }
   return { type: "general" };
 }
@@ -257,6 +279,15 @@ export function hasExplicitAgentKeyword(text: string): IntentType | null {
   ) {
     return "todo";
   }
+  if (
+    text.includes("調べて") ||
+    text.includes("調査") ||
+    text.includes("リサーチ") ||
+    text.includes("について調べ") ||
+    text.includes("について教え")
+  ) {
+    return "research";
+  }
   return null;
 }
 
@@ -280,6 +311,8 @@ export function intentLabel(type: IntentType): string {
       return "営業サポート(湊)";
     case "todo":
       return "ToDo整理(凪)";
+    case "research":
+      return "情報調査(鈴)";
     case "general":
       return "一般応答";
   }
