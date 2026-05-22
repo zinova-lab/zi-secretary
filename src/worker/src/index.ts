@@ -75,6 +75,16 @@ const BOT_CONFIGS: Record<BotType, BotConfig> = {
   },
 };
 
+// Slack の app_mention イベントが Bot ユーザー由来かどうかを判定。
+// 華が Welcome メニュー等を投稿すると、Slack がそのメッセージ内のテキスト
+// (例:`@zi-secretary タスク抽出` のコードブロック)を解析して湊・凪・鈴の
+// Event URL にも通知を送り、各 Bot が連鎖的に勝手に処理を始める事象が
+// 観測された。これを防ぐため、bot_id か subtype="bot_message" を持つ
+// メンションは無視する。各 handleXxxMention の冒頭で early-return に使う。
+function isBotOriginatedMention(event: SlackAppMentionEvent): boolean {
+  return Boolean(event.bot_id) || event.subtype === "bot_message";
+}
+
 // 華(ハブ)が単独で応答する際の受領メッセージ。湊・凪・鈴の「承りました」と
 // 同じ位置づけで、考え中プレースホルダーを置き換えてユーザーに「秘書 AI が
 // 業務を引き受けた」感を与える。intent に応じて文言を出し分け。
@@ -522,6 +532,14 @@ async function handleMention(
   env: Env,
   event: SlackAppMentionEvent,
 ): Promise<void> {
+  if (isBotOriginatedMention(event)) {
+    console.log("[handleMention] skipping bot-originated mention", {
+      bot_id: event.bot_id,
+      subtype: event.subtype,
+      user: event.user,
+    });
+    return;
+  }
   console.log("[handleMention] start", {
     channel: event.channel,
     user: event.user,
@@ -1121,6 +1139,14 @@ async function handleMinatoMention(
   env: Env,
   event: SlackAppMentionEvent,
 ): Promise<void> {
+  if (isBotOriginatedMention(event)) {
+    console.log("[handleMinatoMention] skipping bot-originated mention", {
+      bot_id: event.bot_id,
+      subtype: event.subtype,
+      user: event.user,
+    });
+    return;
+  }
   console.log("[handleMinatoMention] start", {
     channel: event.channel,
     user: event.user,
@@ -1375,6 +1401,14 @@ async function handleNagiMention(
   env: Env,
   event: SlackAppMentionEvent,
 ): Promise<void> {
+  if (isBotOriginatedMention(event)) {
+    console.log("[handleNagiMention] skipping bot-originated mention", {
+      bot_id: event.bot_id,
+      subtype: event.subtype,
+      user: event.user,
+    });
+    return;
+  }
   console.log("[handleNagiMention] start", {
     channel: event.channel,
     user: event.user,
@@ -1637,6 +1671,14 @@ async function handleSuzuMention(
   env: Env,
   event: SlackAppMentionEvent,
 ): Promise<void> {
+  if (isBotOriginatedMention(event)) {
+    console.log("[handleSuzuMention] skipping bot-originated mention", {
+      bot_id: event.bot_id,
+      subtype: event.subtype,
+      user: event.user,
+    });
+    return;
+  }
   console.log("[handleSuzuMention] start", {
     channel: event.channel,
     user: event.user,

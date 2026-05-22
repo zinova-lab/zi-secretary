@@ -31,6 +31,13 @@ export interface SlackAppMentionEvent {
   channel: string;
   event_ts: string;
   thread_ts?: string;
+  // Bot ユーザー由来の app_mention イベントを識別するためのフィールド。
+  // 華が Welcome メニュー等を投稿した時、Slack がそのメッセージ内のテキスト
+  // (`@zi-secretary タスク抽出` のようなコードブロック)を解析して他 Bot の
+  // Event URL にも通知することがあり、Bot 同士の暴走連鎖を引き起こす。
+  // これらが存在する場合は Bot 由来と判定して early-return する。
+  bot_id?: string;
+  subtype?: string;
 }
 
 export interface SlackEventCallback {
