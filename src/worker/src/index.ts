@@ -151,7 +151,7 @@ const WELCOME_BLOCKS: unknown[] = [
     type: "section",
     text: {
       type: "mrkdwn",
-      text: "*求人原稿*(Indeed / マイナビ / リクナビNEXT 対応)\n`@zi-secretary 求人原稿 Indeed 山田工務店様`\n\n*採用ピッチ資料*\n`@zi-secretary 採用資料 山田工務店様`",
+      text: "*求人原稿*(Indeed / マイナビ / リクナビNEXT 対応)\n`@zi-secretary 求人原稿 Indeed サンプル工務店様`\n\n*採用ピッチ資料*\n`@zi-secretary 採用資料 サンプル工務店様`",
     },
   },
   { type: "divider" },
@@ -167,7 +167,7 @@ const WELCOME_BLOCKS: unknown[] = [
     type: "section",
     text: {
       type: "mrkdwn",
-      text: "*記事執筆*(ブログ / コラム / オウンドメディア)\n`@zi-secretary 記事 中小企業のSlack活用術`",
+      text: "*記事執筆*(ブログ / コラム / オウンドメディア)\n`@zi-secretary 記事 中小企業の生成AI活用事例`",
     },
   },
   { type: "divider" },
@@ -183,7 +183,7 @@ const WELCOME_BLOCKS: unknown[] = [
     type: "section",
     text: {
       type: "mrkdwn",
-      text: "*ビジネスメール*(華が対応)\n`@zi-secretary 営業メール 山田工務店様にフォローアップ`\n`@zi-secretary メール 商談後のお礼を〇〇様に`\n\n*営業サポート*(湊が対応)\n提案書 / 商談記録 / 企業情報整理 / ネクストアクション / 営業ストーリー\n`@zi-secretary 営業サポート 提案書 〇〇株式会社向け`\n`@minato 提案書 〇〇株式会社向け`",
+      text: "*ビジネスメール*(華が対応)\n`@zi-secretary 営業メール サンプル工務店様にフォローアップ`\n`@zi-secretary メール 商談後のお礼をサンプル田中様に`\n\n*営業サポート*(湊が対応)\n提案書 / 商談記録 / 企業情報整理 / ネクストアクション / 営業ストーリー\n`@zi-secretary 営業サポート 提案書 サンプル株式会社向け`\n`@minato 提案書 サンプル株式会社向け`",
     },
   },
   { type: "divider" },
@@ -215,7 +215,7 @@ const WELCOME_BLOCKS: unknown[] = [
     type: "section",
     text: {
       type: "mrkdwn",
-      text: "Web を検索して構造化情報を返します(鈴が対応)。\n企業情報 / 業界動向 / 競合調査 / 人物 / 商品・サービス\n`@zi-secretary 〇〇株式会社について調べて`\n`@zi-secretary AI業界の最新動向を調査`\n`@suzu 〇〇というツールについて教えて`",
+      text: "Web を検索して構造化情報を返します(鈴が対応)。\n企業情報 / 業界動向 / 競合調査 / 人物 / 商品・サービス\n`@zi-secretary Anthropic について調べて`\n`@zi-secretary AI業界の最新動向を調査`\n`@suzu Notion というツールについて教えて`",
     },
   },
   { type: "divider" },
@@ -247,7 +247,7 @@ const WELCOME_BLOCKS: unknown[] = [
     type: "section",
     text: {
       type: "mrkdwn",
-      text: "• `@zi-secretary 記事 リモートワーク導入のコツ`\n• `@zi-secretary 営業メール 商談後のお礼を山田様に`\n• `@zi-secretary 採用資料 山田工務店様`",
+      text: "• `@zi-secretary 記事 中小企業の生成AI活用事例`\n• `@zi-secretary 記事 中小企業の生成AI活用事例 docs`\n• `@zi-secretary 営業メール 商談後のお礼をサンプル花子様に`\n• `@zi-secretary 採用資料 サンプル工務店様`\n• `@zi-secretary Anthropic について調べて`",
     },
   },
   { type: "divider" },
