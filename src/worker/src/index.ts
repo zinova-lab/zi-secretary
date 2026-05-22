@@ -75,6 +75,26 @@ const BOT_CONFIGS: Record<BotType, BotConfig> = {
   },
 };
 
+// 華(ハブ)が単独で応答する際の受領メッセージ。湊・凪・鈴の「承りました」と
+// 同じ位置づけで、考え中プレースホルダーを置き換えてユーザーに「秘書 AI が
+// 業務を引き受けた」感を与える。intent に応じて文言を出し分け。
+function getHubAcknowledgement(intent: Intent): string {
+  switch (intent.type) {
+    case "article-writer":
+      return "私が対応いたします、記事を作成します…";
+    case "email-writer":
+      return "私が対応いたします、メール文面を考えます…";
+    case "job-post":
+      return "私が対応いたします、求人原稿を作成します…";
+    case "pitch-deck":
+      return "私が対応いたします、採用資料を作成します…";
+    case "general":
+      return "私が対応いたします、少々お待ちください…";
+    default:
+      return "私が対応いたします…";
+  }
+}
+
 function buildDocTitle(intent: Intent): string {
   const dateStr = new Date().toISOString().slice(0, 10);
   const label = intentLabel(intent.type);
@@ -530,6 +550,10 @@ async function handleMention(
   }
 
   let cleanedUp = false;
+  // 「考え中…」プレースホルダーを我々が明示的に削除済みかどうかを追跡。
+  // help short-circuit / delegate / hub 直接応答パスで delete 後に true にセット。
+  // catch ブロックと末尾の defensive cleanup はこのフラグを見て二重削除を回避する。
+  let placeholderDeleted = false;
   try {
     console.log(
       "[handleMention] thread continuation:",
@@ -659,6 +683,7 @@ async function handleMention(
           placeholder.channel,
           placeholder.ts,
         );
+        placeholderDeleted = true;
       } catch (delErr) {
         const detail =
           delErr instanceof Error ? delErr.message : String(delErr);
@@ -732,6 +757,47 @@ async function handleMention(
       return;
     }
 
+    // 華(ハブ)が単独で応答するパス。委譲分岐(help / sales-support /
+    // task-extract / meeting-summary / todo / research)はすべて上の return
+    // で抜けているので、ここに到達する intent は article-writer / email-writer
+    // / job-post / pitch-deck / general のいずれか。
+    //
+    // 湊・凪・鈴と同じ「受領 + 本文」の 2 投稿フローに揃えるため、まず
+    // 「考え中…」プレースホルダーを削除し、intent に応じた受領メッセージを
+    // 独立投稿として送る。本文は Claude 応答が返った後にさらに新規投稿として
+    // 追加する(postMultipartReply による placeholder 更新は使わない)。
+    try {
+      await deleteSlackMessage(
+        env.SLACK_BOT_TOKEN,
+        placeholder.channel,
+        placeholder.ts,
+      );
+      placeholderDeleted = true;
+    } catch (delErr) {
+      const detail =
+        delErr instanceof Error ? delErr.message : String(delErr);
+      console.error(
+        "[handleMention] hub direct: failed to delete placeholder:",
+        detail,
+      );
+    }
+
+    try {
+      await postSlackMessage(
+        env.SLACK_BOT_TOKEN,
+        placeholder.channel,
+        getHubAcknowledgement(intent),
+        replyTs,
+      );
+    } catch (ackErr) {
+      const detail =
+        ackErr instanceof Error ? ackErr.message : String(ackErr);
+      console.error(
+        "[handleMention] hub direct: acknowledgement post failed:",
+        detail,
+      );
+    }
+
     console.log("[handleMention] building system prompt...");
     let systemPrompt = await buildSystemPrompt(intent, userMeetingNote);
     if (multiUser) {
@@ -786,14 +852,17 @@ async function handleMention(
 
     console.log("[handleMention] split into", postParts.length, "parts");
 
-    console.log("[handleMention] posting reply (multipart)...");
-    await postMultipartReply(
-      env.SLACK_BOT_TOKEN,
-      placeholder.channel,
-      replyTs,
-      placeholder.ts,
-      postParts,
-    );
+    // 本文は新規投稿として追加(受領メッセージはスレッドに残したまま、
+    // 湊・凪・鈴と同じ振る舞い)。
+    console.log("[handleMention] posting reply parts as new messages...");
+    for (const part of postParts) {
+      await postSlackMessage(
+        env.SLACK_BOT_TOKEN,
+        placeholder.channel,
+        part,
+        replyTs,
+      );
+    }
     cleanedUp = true;
     console.log("[handleMention] done");
   } catch (err) {
@@ -822,32 +891,40 @@ async function handleMention(
       console.error("[handleMention] failed to post error:", postDetail);
     }
 
-    try {
+    if (placeholderDeleted) {
+      // プレースホルダーは既に削除済み(hub 直接応答パス等で先に消した)。
+      // 警告メッセージを新規投稿として出せていれば、それで十分。
       if (posted) {
-        await deleteSlackMessage(
-          env.SLACK_BOT_TOKEN,
-          placeholder.channel,
-          placeholder.ts,
-        );
-      } else {
-        await updateSlackMessage(
-          env.SLACK_BOT_TOKEN,
-          placeholder.channel,
-          placeholder.ts,
-          `:warning: ${userMsg}`,
-        );
+        cleanedUp = true;
       }
-      cleanedUp = true;
-    } catch (cleanupErr) {
-      const cleanupDetail =
-        cleanupErr instanceof Error
-          ? `${cleanupErr.name}: ${cleanupErr.message}`
-          : String(cleanupErr);
-      console.error("[handleMention] cleanup failed:", cleanupDetail);
+    } else {
+      try {
+        if (posted) {
+          await deleteSlackMessage(
+            env.SLACK_BOT_TOKEN,
+            placeholder.channel,
+            placeholder.ts,
+          );
+        } else {
+          await updateSlackMessage(
+            env.SLACK_BOT_TOKEN,
+            placeholder.channel,
+            placeholder.ts,
+            `:warning: ${userMsg}`,
+          );
+        }
+        cleanedUp = true;
+      } catch (cleanupErr) {
+        const cleanupDetail =
+          cleanupErr instanceof Error
+            ? `${cleanupErr.name}: ${cleanupErr.message}`
+            : String(cleanupErr);
+        console.error("[handleMention] cleanup failed:", cleanupDetail);
+      }
     }
   }
 
-  if (!cleanedUp) {
+  if (!cleanedUp && !placeholderDeleted) {
     console.log("[handleMention] running final defensive cleanup");
     try {
       await deleteSlackMessage(
