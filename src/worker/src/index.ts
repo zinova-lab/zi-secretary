@@ -1398,6 +1398,24 @@ async function executeSuzuTask(
     }
   }
 
+  // 空メンション(@suzu だけ)対応:Claude API は空 content を拒否するため、
+  // 案内メッセージだけ返して終了する。承りましたメッセージは残す(自然な流れ)。
+  if (userMessage.trim().length === 0) {
+    console.log("[executeSuzuTask] empty userMessage, posting guidance");
+    try {
+      await postSlackMessage(
+        suzuToken,
+        channel,
+        "何を調べましょうか?例えば以下のような調査ができます:\n• `〇〇株式会社について調べて`\n• `〇〇業界の動向を調査`\n• `〇〇というツールについて教えて`",
+        threadTs,
+      );
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error("[executeSuzuTask] guidance post failed:", detail);
+    }
+    return;
+  }
+
   try {
     let intent: Intent;
     if (forcedIntent) {

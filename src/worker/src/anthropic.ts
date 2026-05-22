@@ -26,7 +26,14 @@ const MODEL = "claude-haiku-4-5-20251001";
 // 観測後、CLAUDE_TIMEOUT_MS の最適値も再評価予定(現在 45 秒)。
 const MAX_TOKENS = 2500;
 const MAX_RETRIES = 3;
-const RETRY_DELAYS_MS = [0, 2000, 5000];
+// 旧 [0, 2000, 5000] から [0, 1000, 2000] に短縮。529 overloaded のような
+// 一過性のエラーは数秒で回復することが多く、長く待つ意味が薄い。
+// さらに全体予算(effectiveTimeoutMs)を超えないよう、リトライ前に残り時間を
+// チェックして中止する仕組みも加える(下記参照)。
+const RETRY_DELAYS_MS = [0, 1000, 2000];
+// 残り予算がこれ未満になったらリトライ中止。リトライしても完走できない
+// (waitUntil grace を超える)恐れがあるので、確実にエラー通知に進ませる。
+const MIN_REMAINING_FOR_RETRY_MS = 10_000;
 // 45 秒に設定。Workers の CPU 時間制限(30 秒)は fetch() による
 // 外部 API 待ちを含まないため、wall-clock でこれ以上待つことは公式制限上
 // 問題ない。
@@ -88,16 +95,38 @@ export async function askClaudeConversation(
   const effectiveTimeoutMs = hasTools
     ? CLAUDE_TIMEOUT_MS_WITH_TOOLS
     : CLAUDE_TIMEOUT_MS;
+  // 全体予算 = effectiveTimeoutMs。3 リトライの累計でこの時間を超えない。
+  // 超える前に loop を抜け、catch 側でエラー通知を確実に走らせる。
+  const overallBudgetMs = effectiveTimeoutMs;
+  const startTotalMs = Date.now();
   let lastError: unknown;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const elapsedTotalMs = Date.now() - startTotalMs;
+    const remainingMs = overallBudgetMs - elapsedTotalMs;
+
+    // リトライ前の残り予算チェック(初回 attempt 0 は無条件で実行)
+    if (attempt > 0 && remainingMs < MIN_REMAINING_FOR_RETRY_MS) {
+      console.log(
+        `[askClaudeConversation] budget low (${remainingMs}ms remaining), aborting retries`,
+      );
+      break;
+    }
+
     if (attempt > 0) {
       const delay = RETRY_DELAYS_MS[attempt] ?? 0;
       console.log(
-        `[askClaudeConversation] retrying (attempt ${attempt + 1}/${MAX_RETRIES}) after ${delay}ms...`,
+        `[askClaudeConversation] retrying (attempt ${attempt + 1}/${MAX_RETRIES}) after ${delay}ms (budget remaining: ${remainingMs}ms)...`,
       );
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
+
+    // 個別 timeout は effective と残り予算の小さい方。
+    // attempt 0 では effective 全体が使えるが、attempt 2 で残り 15s なら 15s で打ち切り。
+    const individualTimeoutMs = Math.min(
+      effectiveTimeoutMs,
+      overallBudgetMs - (Date.now() - startTotalMs),
+    );
 
     const startMs = Date.now();
     try {
@@ -122,10 +151,10 @@ export async function askClaudeConversation(
           () =>
             reject(
               new Error(
-                `Claude API timeout (${effectiveTimeoutMs / 1000}s)`,
+                `Claude API timeout (${individualTimeoutMs / 1000}s)`,
               ),
             ),
-          effectiveTimeoutMs,
+          individualTimeoutMs,
         );
       });
 
