@@ -112,7 +112,7 @@ function detectMedia(loweredText: string): Media | undefined {
 
 function extractCompany(text: string): string | undefined {
   // 長文ペースト中の誤抽出を避けるため、1行目のみを対象にする。
-  // 通常のコマンドは "@zi-secretary 求人原稿 Indeed 山田ホームズ様" のような
+  // 通常のコマンドは "@zi-secretary 求人原稿 Indeed サンプル工務店様" のような
   // 短い1行入力。長文の途中の「〜様」「〜株式会社」等にマッチしないようにする。
   const firstLine = text.split("\n")[0] ?? "";
 

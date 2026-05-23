@@ -2,8 +2,8 @@ import { fetchPrompt } from "./github";
 import { intentLabel, type Intent } from "./intent";
 
 const HUB_PATH = "prompts/secretary-hub.md";
-const CLIENT_INFO_PATH = "clients/dummy-rsc.md";
-const DUMMY_MEETING_PATH = "clients/dummy-rsc-meeting-2026-05-02.md";
+const CLIENT_INFO_PATH = "clients/sample-client.md";
+const SAMPLE_MEETING_PATH = "clients/sample-meeting.md";
 
 interface PromptSection {
   title: string;
@@ -45,7 +45,7 @@ async function getMeetingSection(
       content: userMeetingNote,
     };
   }
-  const meeting = await fetchPrompt(DUMMY_MEETING_PATH);
+  const meeting = await fetchPrompt(SAMPLE_MEETING_PATH);
   return {
     title: `${fallbackTitle}(サンプル)`,
     content: meeting,

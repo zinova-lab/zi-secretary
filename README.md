@@ -16,16 +16,16 @@ zi-secretary/
 │   ├── mynavi.md
 │   └── rikunavi-next.md
 ├── clients/                      # 顧客情報・サンプル
-│   ├── dummy-rsc.md
-│   └── dummy-rsc-meeting-2026-05-02.md
+│   ├── sample-client.md
+│   └── sample-meeting.md
 ├── src/                          # ソースコード
 └── README.md
 
 ## 起動コマンド例
 
 @zi-secretary タスク抽出
-@zi-secretary 求人原稿 Indeed 山田ホームズ様
-@zi-secretary 採用資料 山田ホームズ様
+@zi-secretary 求人原稿 Indeed サンプル工務店様
+@zi-secretary 採用資料 サンプル工務店様
 @zi-secretary 議事録要約
 
 メンションのみ → ボタンUI起動
